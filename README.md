@@ -1,8 +1,8 @@
-# Claude Code but with OpenAI Models 🧙‍♂️🔄 ¯\\_(ツ)_/¯
+# Claude Code with Any Provider 🧙‍♂️🔄
 
-**Use Claude Code with OpenAI Models** 🤝
+**Use Claude Code with OpenAI, Azure, Databricks and More** 🤝
 
-A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gpt-4.5 and o3-mini. 🌉
+A proxy server that lets you use Claude Code with OpenAI models like GPT-4o, Azure OpenAI deployments, or Databricks endpoints. 🌉
 
 
 ![Claude Code but with OpenAI Models](pic.png)
@@ -18,8 +18,8 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
 
 1. **Clone this repository**:
    ```bash
-   git clone https://github.com/1rgs/claude-code-openai.git
-   cd claude-code-openai
+   git clone https://github.com/ericmichael/claude-code-azure.git
+   cd claude-code-azure
    ```
 
 2. **Install UV**:
