@@ -1,0 +1,25 @@
+#!/bin/bash
+# Portable launcher script for claude-mirror
+
+# Find the right Python with the package installed
+if command -v python3 &> /dev/null; then
+    if python3 -c "import claude_mirror" 2>/dev/null; then
+        # Found package in python3
+        python3 -m claude_mirror.cli "$@"
+        exit $?
+    fi
+fi
+
+# Try with 'python'
+if command -v python &> /dev/null; then
+    if python -c "import claude_mirror" 2>/dev/null; then
+        # Found package in python
+        python -m claude_mirror.cli "$@"
+        exit $?
+    fi
+fi
+
+# If we get here, we couldn't find the package
+echo "Error: claude_mirror package not found in Python path"
+echo "Try running: python -m pip install -e /path/to/claude-mirror"
+exit 1
