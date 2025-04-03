@@ -232,86 +232,48 @@ class ModelHelper:
     @staticmethod
     def configure_provider_parameters(model, litellm_request):
         """Configure provider-specific parameters based on the model."""
-        if USE_CONFIG:
-            # Handle category references
-            if model in config["model_categories"].keys():
-                model = map_to_litellm_model(model)
-            
-            # Determine provider from model string - no defaults
-            provider = None
-            if model.startswith("openai/"):
-                provider = "openai"
-            elif model.startswith("anthropic/"):
-                provider = "anthropic"
-            elif model.startswith("azure/"):
-                provider = "azure"
-            elif model.startswith("databricks/"):
-                provider = "databricks"
-            else:
-                # No default provider - require explicit provider prefix
-                raise HTTPException(status_code=400, 
-                    detail="Unrecognized model prefix. Please specify model with explicit provider prefix or use a category name.")
-            
-            # Check if provider is configured
-            if provider not in config["providers"]:
-                raise HTTPException(status_code=400, detail=f"{provider} configuration required but not configured")
-            
-            # Get provider-specific parameters
-            params = get_provider_params(model)
-            
-            # Update the request with provider parameters
-            for key, value in params.items():
-                litellm_request[key] = value
-            
-            if provider == "azure":
-                # Extract the deployment name from azure/deployment_name
-                deployment_name = model[6:]
-                litellm_request["model"] = f"azure/{deployment_name}"
-                logger.debug(f"Using Azure OpenAI configuration for deployment: {deployment_name}")
-            elif provider == "databricks":
-                # Extract the Databricks model name
-                databricks_model = model.split("/")[-1]
-                litellm_request["model"] = "databricks"
-                logger.debug(f"Using Databricks configuration for model: {databricks_model}")
-            
-            return litellm_request
+        # Handle category references
+        if model in config["model_categories"].keys():
+            model = map_to_litellm_model(model)
+        
+        # Determine provider from model string - no defaults
+        provider = None
+        if model.startswith("openai/"):
+            provider = "openai"
+        elif model.startswith("anthropic/"):
+            provider = "anthropic"
+        elif model.startswith("azure/"):
+            provider = "azure"
+        elif model.startswith("databricks/"):
+            provider = "databricks"
         else:
-            # Legacy provider configuration
-            if model.startswith("openai/"):
-                if not has_openai:
-                    raise HTTPException(status_code=400, detail="OpenAI API key required but not configured")
-                litellm_request["api_key"] = OPENAI_API_KEY
-                logger.debug(f"Using OpenAI API key for model: {model}")
-            elif model.startswith("anthropic/"):
-                if not ANTHROPIC_API_KEY:
-                    raise HTTPException(status_code=400, detail="Anthropic API key required but not configured")
-                litellm_request["api_key"] = ANTHROPIC_API_KEY
-                logger.debug(f"Using Anthropic API key for model: {model}")
-            elif model.startswith("azure/"):
-                if not has_azure:
-                    raise HTTPException(status_code=400, detail="Azure OpenAI configuration required but not configured")
-                litellm_request["api_key"] = AZURE_OPENAI_API_KEY
-                litellm_request["api_base"] = AZURE_OPENAI_ENDPOINT
-                litellm_request["api_version"] = AZURE_OPENAI_API_VERSION
-                # Extract the deployment name from azure/deployment_name
-                deployment_name = model[6:]
-                litellm_request["model"] = f"azure/{deployment_name}"
-                logger.debug(f"Using Azure OpenAI configuration for deployment: {deployment_name}")
-            elif model.startswith("databricks/"):
-                if not has_databricks:
-                    raise HTTPException(status_code=400, detail="Databricks configuration required but not configured")
-                # Extract the Databricks model name
-                databricks_model = model[11:]
-                # Set up Databricks-specific configuration
-                litellm_request["api_key"] = DATABRICKS_TOKEN
-                litellm_request["api_base"] = f"{DATABRICKS_HOST}/serving-endpoints/{databricks_model}"
-                litellm_request["model"] = "databricks"
-                logger.debug(f"Using Databricks configuration for model: {databricks_model}")
-            else:
-                # Unknown model prefix, require explicit provider specification
-                raise HTTPException(status_code=400, 
-                    detail="Unrecognized model prefix. Please specify model with explicit provider prefix: 'openai/', 'anthropic/', 'azure/', or 'databricks/'.")
-            return litellm_request
+            # No default provider - require explicit provider prefix
+            raise HTTPException(status_code=400, 
+                detail="Unrecognized model prefix. Please specify model with explicit provider prefix or use a category name.")
+        
+        # Check if provider is configured
+        if provider not in config["providers"]:
+            raise HTTPException(status_code=400, detail=f"{provider} configuration required but not configured")
+        
+        # Get provider-specific parameters
+        params = get_provider_params(model)
+        
+        # Update the request with provider parameters
+        for key, value in params.items():
+            litellm_request[key] = value
+        
+        if provider == "azure":
+            # Extract the deployment name from azure/deployment_name
+            deployment_name = model[6:]
+            litellm_request["model"] = f"azure/{deployment_name}"
+            logger.debug(f"Using Azure OpenAI configuration for deployment: {deployment_name}")
+        elif provider == "databricks":
+            # Extract the Databricks model name
+            databricks_model = model.split("/")[-1]
+            litellm_request["model"] = "databricks"
+            logger.debug(f"Using Databricks configuration for model: {databricks_model}")
+        
+        return litellm_request
 
 app = FastAPI()
 
@@ -376,6 +338,10 @@ class ModelRequestBase(BaseModel):
             
         return v
 
+class ToolChoice(BaseModel):
+    type: Literal["auto", "any", "tool"]
+    name: Optional[str] = None
+
 class MessagesRequest(ModelRequestBase):
     max_tokens: int
     messages: List[Message]
@@ -387,7 +353,7 @@ class MessagesRequest(ModelRequestBase):
     top_k: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
     tools: Optional[List[Tool]] = None
-    tool_choice: Optional[Dict[str, Any]] = None
+    tool_choice: Optional[Union[Dict[str, Any], ToolChoice]] = None
     thinking: Optional[ThinkingConfig] = None
 
 class TokenCountRequest(ModelRequestBase):
@@ -395,7 +361,7 @@ class TokenCountRequest(ModelRequestBase):
     system: Optional[Union[str, List[SystemContent]]] = None
     tools: Optional[List[Tool]] = None
     thinking: Optional[ThinkingConfig] = None
-    tool_choice: Optional[Dict[str, Any]] = None
+    tool_choice: Optional[Union[Dict[str, Any], ToolChoice]] = None
 
 class TokenCountResponse(BaseModel):
     input_tokens: int
@@ -447,19 +413,28 @@ class ContentParser:
         if isinstance(content, list):
             result = ""
             for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    result += item.get("text", "") + "\n"
-                elif isinstance(item, str):
-                    result += item + "\n"
-                elif isinstance(item, dict):
-                    if "text" in item:
+                if isinstance(item, dict):
+                    # Handle dictionary items
+                    if "type" in item and item["type"] == "text":
+                        result += item.get("text", "") + "\n"
+                    elif "text" in item:
                         result += item.get("text", "") + "\n"
                     else:
                         try:
                             result += json.dumps(item) + "\n"
                         except:
                             result += str(item) + "\n"
+                elif hasattr(item, "type") and item.type == "text":
+                    # Handle objects with type attribute
+                    result += item.text + "\n"
+                elif hasattr(item, "text"):
+                    # Handle objects with text attribute
+                    result += item.text + "\n"
+                elif isinstance(item, str):
+                    # Handle string items
+                    result += item + "\n"
                 else:
+                    # Handle other types
                     try:
                         result += str(item) + "\n"
                     except:
@@ -467,12 +442,16 @@ class ContentParser:
             return result.strip()
             
         if isinstance(content, dict):
-            if content.get("type") == "text":
+            if "type" in content and content["type"] == "text":
                 return content.get("text", "")
             try:
                 return json.dumps(content)
             except:
                 return str(content)
+        
+        # Handle objects with type property
+        if hasattr(content, "type") and content.type == "text":
+            return content.text
                 
         # Fallback for any other type
         try:
@@ -480,49 +459,8 @@ class ContentParser:
         except:
             return "Unparseable content"
     
-    @staticmethod
-    def extract_text_from_tool_result(block):
-        """Extract text content from a tool result block."""
-        tool_id = block.get("tool_use_id", "") if hasattr(block, "tool_use_id") else ""
-        if not hasattr(block, "content"):
-            return f"Tool result for {tool_id}: No content"
-            
-        # Handle different formats of content
-        result_content = block.content
-        
-        if isinstance(result_content, str):
-            return f"Tool result for {tool_id}:\n{result_content}"
-            
-        if isinstance(result_content, list):
-            text_result = ""
-            for item in result_content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text_result += item.get("text", "") + "\n"
-                elif isinstance(item, dict):
-                    # Handle any dict by trying to extract text or convert to JSON
-                    if "text" in item:
-                        text_result += item.get("text", "") + "\n"
-                    else:
-                        try:
-                            text_result += json.dumps(item) + "\n"
-                        except:
-                            text_result += str(item) + "\n"
-            return f"Tool result for {tool_id}:\n{text_result.strip()}"
-            
-        if isinstance(result_content, dict):
-            # Handle dictionary content
-            if result_content.get("type") == "text":
-                return f"Tool result for {tool_id}:\n{result_content.get('text', '')}"
-            try:
-                return f"Tool result for {tool_id}:\n{json.dumps(result_content)}"
-            except:
-                return f"Tool result for {tool_id}:\n{str(result_content)}"
-                
-        # Handle any other type by converting to string
-        try:
-            return f"Tool result for {tool_id}:\n{str(result_content)}"
-        except:
-            return f"Tool result for {tool_id}:\nUnparseable content"
+    # This function has been removed as its functionality is now handled inline
+    # in the places where it was used, to avoid issues with object/dict detection
     
     @staticmethod
     def process_content_for_openai(messages):
@@ -530,6 +468,11 @@ class ContentParser:
         processed_messages = []
         
         for msg in messages:
+            if not isinstance(msg, dict):
+                # Skip non-dict messages
+                logger.warning(f"Skipping non-dict message: {type(msg)}")
+                continue
+                
             processed_msg = msg.copy()
             
             # Handle content field
@@ -541,58 +484,81 @@ class ContentParser:
                     # Convert complex content blocks to simple string
                     text_content = ""
                     for block in content:
-                        if isinstance(block, dict):
-                            # Handle different content block types
-                            if block.get("type") == "text":
-                                text_content += block.get("text", "") + "\n"
+                        # Skip None blocks
+                        if block is None:
+                            continue
                             
+                        # Handle objects with type attribute
+                        if hasattr(block, "type"):
+                            if block.type == "text":
+                                text_content += block.text + "\n"
                             # Handle tool_result content blocks
-                            elif block.get("type") == "tool_result":
-                                tool_id = block.get("tool_use_id", "unknown")
+                            elif block.type == "tool_result":
+                                tool_id = block.tool_use_id
                                 text_content += f"[Tool Result ID: {tool_id}]\n"
+                                result_content = block.content
                                 
-                                # Extract text from the tool_result content
-                                result_content = block.get("content", [])
+                                # Convert result content to a clean format for OpenAI
                                 if isinstance(result_content, list):
                                     for item in result_content:
-                                        if isinstance(item, dict) and item.get("type") == "text":
-                                            text_content += item.get("text", "") + "\n"
-                                        elif isinstance(item, dict):
-                                            # Handle any dict
-                                            if "text" in item:
-                                                text_content += item.get("text", "") + "\n"
-                                            else:
-                                                try:
-                                                    text_content += json.dumps(item) + "\n"
-                                                except:
-                                                    text_content += str(item) + "\n"
-                                elif isinstance(result_content, dict):
-                                    # Handle dictionary content
-                                    if result_content.get("type") == "text":
-                                        text_content += result_content.get("text", "") + "\n"
-                                    else:
-                                        try:
-                                            text_content += json.dumps(result_content) + "\n"
-                                        except:
-                                            text_content += str(result_content) + "\n"
+                                        if item is None:
+                                            continue
+                                        if isinstance(item, dict) and "type" in item and item["type"] == "text":
+                                            text_content += item["text"] + "\n"
+                                        elif hasattr(item, "type") and item.type == "text":
+                                            text_content += item.text + "\n"
+                                        else:
+                                            try:
+                                                text_content += json.dumps(item) + "\n"
+                                            except (TypeError, ValueError):
+                                                text_content += str(item) + "\n"
                                 elif isinstance(result_content, str):
                                     text_content += result_content + "\n"
                                 else:
                                     try:
                                         text_content += json.dumps(result_content) + "\n"
-                                    except:
+                                    except (TypeError, ValueError):
                                         text_content += str(result_content) + "\n"
-                            
+                                        
                             # Handle tool_use content blocks
-                            elif block.get("type") == "tool_use":
-                                tool_name = block.get("name", "unknown")
-                                tool_id = block.get("id", "unknown")
-                                tool_input = json.dumps(block.get("input", {}))
-                                text_content += f"[Tool: {tool_name} (ID: {tool_id})]\nInput: {tool_input}\n\n"
+                            elif block.type == "tool_use":
+                                tool_name = block.name
+                                tool_id = block.id
+                                try:
+                                    tool_input_json = json.dumps(block.input)
+                                except (TypeError, ValueError):
+                                    tool_input_json = str(block.input)
+                                text_content += f"[Tool: {tool_name} (ID: {tool_id})]\nInput: {tool_input_json}\n\n"
                             
                             # Handle image content blocks
-                            elif block.get("type") == "image":
+                            elif block.type == "image":
                                 text_content += "[Image content - not displayed in text format]\n"
+                        # Handle dictionary style content blocks (legacy format)
+                        elif isinstance(block, dict) and "type" in block:
+                            if block["type"] == "text":
+                                text_content += block.get("text", "") + "\n"
+                            elif block["type"] == "tool_result":
+                                tool_id = block.get("tool_use_id", "unknown")
+                                text_content += f"[Tool Result ID: {tool_id}]\n"
+                                result_content = block.get("content", {})
+                                
+                                # Process result content
+                                parsed_content = ContentParser.parse_tool_result_content(result_content)
+                                text_content += parsed_content + "\n"
+                            elif block["type"] == "tool_use":
+                                tool_name = block.get("name", "unknown")
+                                tool_id = block.get("id", "unknown")
+                                tool_input = block.get("input", {})
+                                try:
+                                    tool_input_json = json.dumps(tool_input)
+                                except (TypeError, ValueError):
+                                    tool_input_json = str(tool_input)
+                                text_content += f"[Tool: {tool_name} (ID: {tool_id})]\nInput: {tool_input_json}\n\n"
+                            elif block["type"] == "image":
+                                text_content += "[Image content - not displayed in text format]\n"
+                        # Handle unknown block types
+                        else:
+                            text_content += f"[Unknown content block: {type(block)}]\n"
                     
                     # Make sure content is never empty for OpenAI models
                     if not text_content.strip():
@@ -602,6 +568,12 @@ class ContentParser:
                 # Also check for None or empty string content
                 elif content is None:
                     processed_msg["content"] = "..." # Empty content not allowed
+                elif not isinstance(content, str):
+                    # If content is not a string or list, convert to string
+                    try:
+                        processed_msg["content"] = json.dumps(content)
+                    except (TypeError, ValueError):
+                        processed_msg["content"] = str(content)
             
             # Remove any fields OpenAI doesn't support in messages
             for key in list(processed_msg.keys()):
@@ -630,10 +602,11 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
             # List of content blocks
             system_text = ""
             for block in anthropic_request.system:
-                if hasattr(block, 'type') and block.type == "text":
+                # System content blocks must be SystemContent objects
+                if isinstance(block, SystemContent):
                     system_text += block.text + "\n\n"
-                elif isinstance(block, dict) and block.get("type") == "text":
-                    system_text += block.get("text", "") + "\n\n"
+                else:
+                    logger.warning(f"Ignoring non-SystemContent block in system message: {type(block)}")
             
             if system_text:
                 messages.append({"role": "system", "content": system_text.strip()})
@@ -647,63 +620,100 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
             # Special handling for tool_result in user messages
             # OpenAI/LiteLLM format expects the assistant to call the tool, 
             # and the user's next message to include the result as plain text
-            if msg.role == "user" and any(block.type == "tool_result" for block in content if hasattr(block, "type")):
+            if isinstance(content, list) and msg.role == "user" and any(isinstance(block, ContentBlockToolResult) for block in content):
                 # For user messages with tool_result, split into separate messages
                 text_content = ""
                 
                 # Extract all text parts and concatenate them
                 for block in content:
-                    if hasattr(block, "type"):
-                        if block.type == "text":
-                            text_content += block.text + "\n"
-                        elif block.type == "tool_result":
-                            # Use our helper method to extract text from tool result
-                            text_content += ContentParser.extract_text_from_tool_result(block) + "\n"
+                    if isinstance(block, ContentBlockText):
+                        text_content += block.text + "\n"
+                    elif isinstance(block, ContentBlockToolResult):
+                        # Handle tool result - extract key information
+                        tool_id = block.tool_use_id
+                        result_content = block.content
+                        
+                        # Parse and format the content consistently
+                        if isinstance(result_content, str):
+                            formatted_content = result_content
+                        elif hasattr(result_content, "__dict__"):
+                            # Convert Pydantic or other object to dict
+                            formatted_content = json.dumps(result_content.__dict__, indent=2)
+                        elif isinstance(result_content, list) and any(hasattr(item, "__dict__") for item in result_content):
+                            # List of objects - convert to list of dicts
+                            formatted_list = []
+                            for item in result_content:
+                                if hasattr(item, "__dict__"):
+                                    formatted_list.append(item.__dict__)
+                                else:
+                                    formatted_list.append(item)
+                            formatted_content = json.dumps(formatted_list, indent=2)
+                        else:
+                            # Try regular JSON dump
+                            try:
+                                formatted_content = json.dumps(result_content, indent=2)
+                            except TypeError:
+                                # If that fails, use string representation
+                                formatted_content = str(result_content)
+                            
+                        text_content += f"Tool result for {tool_id}:\n{formatted_content}\n"
                 
                 # Add as a single user message with all the content
                 messages.append({"role": "user", "content": text_content.strip()})
             else:
                 # Regular handling for other message types
-                processed_content = []
-                for block in content:
-                    if hasattr(block, "type"):
-                        if block.type == "text":
+                if isinstance(content, list):  # Make sure content is a list
+                    processed_content = []
+                    for block in content:
+                        # Use specific type checks for each content block type
+                        if isinstance(block, ContentBlockText):
                             processed_content.append({"type": "text", "text": block.text})
-                        elif block.type == "image":
+                        elif isinstance(block, ContentBlockImage):
                             processed_content.append({"type": "image", "source": block.source})
-                        elif block.type == "tool_use":
-                            # Handle tool use blocks if needed
+                        elif isinstance(block, ContentBlockToolUse):
+                            # Handle tool use blocks
                             processed_content.append({
                                 "type": "tool_use",
                                 "id": block.id,
                                 "name": block.name,
                                 "input": block.input
                             })
-                        elif block.type == "tool_result":
-                            # Handle different formats of tool result content
+                        elif isinstance(block, ContentBlockToolResult):
+                            # Handle tool result blocks
                             processed_content_block = {
                                 "type": "tool_result",
-                                "tool_use_id": block.tool_use_id if hasattr(block, "tool_use_id") else ""
+                                "tool_use_id": block.tool_use_id
                             }
                             
-                            # Process the content field properly
-                            if hasattr(block, "content"):
-                                if isinstance(block.content, str):
-                                    # If it's a simple string, create a text block for it
-                                    processed_content_block["content"] = [{"type": "text", "text": block.content}]
-                                elif isinstance(block.content, list):
-                                    # If it's already a list of blocks, keep it
-                                    processed_content_block["content"] = block.content
-                                else:
-                                    # Default fallback
-                                    processed_content_block["content"] = [{"type": "text", "text": str(block.content)}]
+                            # Process the content field according to its type
+                            if isinstance(block.content, str):
+                                # If it's a simple string, create a text block for it
+                                processed_content_block["content"] = [{"type": "text", "text": block.content}]
+                            elif isinstance(block.content, list):
+                                # If it's already a list of blocks, keep it
+                                # Make sure each item is a dict, not an object
+                                normalized_content = []
+                                for item in block.content:
+                                    if hasattr(item, "type") and hasattr(item, "__dict__"):
+                                        # Convert object to dict
+                                        normalized_content.append(item.__dict__)
+                                    else:
+                                        normalized_content.append(item)
+                                processed_content_block["content"] = normalized_content
                             else:
-                                # Default empty content
-                                processed_content_block["content"] = [{"type": "text", "text": ""}]
+                                # Try to convert to dict if it's an object with __dict__
+                                if hasattr(block.content, "__dict__"):
+                                    processed_content_block["content"] = [{"type": "text", "text": json.dumps(block.content.__dict__)}]
+                                else:
+                                    # Convert other types to string representation
+                                    processed_content_block["content"] = [{"type": "text", "text": json.dumps(block.content)}]
                                 
                             processed_content.append(processed_content_block)
-                
-                messages.append({"role": msg.role, "content": processed_content})
+                    
+                    messages.append({"role": msg.role, "content": processed_content})
+                else:
+                    # If content isn't a string or list, convert to string
+                    messages.append({"role": msg.role, "content": str(content)})
     
     # Cap max_tokens for OpenAI models to their limit of 16384
     max_tokens = anthropic_request.max_tokens
@@ -734,19 +744,13 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
     if anthropic_request.tools:
         openai_tools = []
         for tool in anthropic_request.tools:
-            # Convert to dict if it's a pydantic model
-            if hasattr(tool, 'dict'):
-                tool_dict = tool.dict()
-            else:
-                tool_dict = tool
-                
             # Create OpenAI-compatible function tool
             openai_tool = {
                 "type": "function",
                 "function": {
-                    "name": tool_dict["name"],
-                    "description": tool_dict.get("description", ""),
-                    "parameters": tool_dict["input_schema"]
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": tool.input_schema
                 }
             }
             openai_tools.append(openai_tool)
@@ -755,24 +759,49 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
     
     # Convert tool_choice to OpenAI format if present
     if anthropic_request.tool_choice:
-        if hasattr(anthropic_request.tool_choice, 'dict'):
-            tool_choice_dict = anthropic_request.tool_choice.dict()
-        else:
-            tool_choice_dict = anthropic_request.tool_choice
-            
-        # Handle Anthropic's tool_choice format
-        choice_type = tool_choice_dict.get("type")
+        # Log details about the tool_choice object to assist in debugging
+        logger.info(f"Tool choice type: {type(anthropic_request.tool_choice)}")
+        logger.info(f"Tool choice dir: {dir(anthropic_request.tool_choice)}")
+        logger.info(f"Tool choice repr: {repr(anthropic_request.tool_choice)}")
+        
+        # We now have defined ToolChoice as a proper Pydantic model
+        # Handle it based on its structure
+        tool_choice = anthropic_request.tool_choice
+        
+        # Get the type safely regardless of whether it's a dict or object
+        choice_type = None
+        if isinstance(tool_choice, dict) and "type" in tool_choice:
+            choice_type = tool_choice["type"]
+        elif isinstance(tool_choice, ToolChoice):
+            choice_type = tool_choice.type
+        elif hasattr(tool_choice, "type"):
+            choice_type = tool_choice.type
+        
+        # Process based on the choice type
         if choice_type == "auto":
             litellm_request["tool_choice"] = "auto"
         elif choice_type == "any":
             litellm_request["tool_choice"] = "any"
-        elif choice_type == "tool" and "name" in tool_choice_dict:
-            litellm_request["tool_choice"] = {
-                "type": "function",
-                "function": {"name": tool_choice_dict["name"]}
-            }
+        elif choice_type == "tool":
+            # Get the name safely
+            tool_name = None
+            if isinstance(tool_choice, dict) and "name" in tool_choice:
+                tool_name = tool_choice["name"]
+            elif isinstance(tool_choice, ToolChoice) and tool_choice.name:
+                tool_name = tool_choice.name
+            elif hasattr(tool_choice, "name"):
+                tool_name = tool_choice.name
+            
+            if tool_name:
+                litellm_request["tool_choice"] = {
+                    "type": "function",
+                    "function": {"name": tool_name}
+                }
+            else:
+                # No tool name found, default to auto
+                litellm_request["tool_choice"] = "auto"
         else:
-            # Default to auto if we can't determine
+            # Default to auto if the format is unrecognized
             litellm_request["tool_choice"] = "auto"
     
     return litellm_request
@@ -789,41 +818,14 @@ def convert_litellm_to_anthropic(litellm_response: Union[Dict[str, Any], Any],
         # Check if this is a Claude model (which supports content blocks)
         is_claude_model = clean_model.startswith("claude-")
         
-        # Handle ModelResponse object from LiteLLM
-        if hasattr(litellm_response, 'choices') and hasattr(litellm_response, 'usage'):
-            # Extract data from ModelResponse object directly
-            choices = litellm_response.choices
-            message = choices[0].message if choices and len(choices) > 0 else None
-            content_text = message.content if message and hasattr(message, 'content') else ""
-            tool_calls = message.tool_calls if message and hasattr(message, 'tool_calls') else None
-            finish_reason = choices[0].finish_reason if choices and len(choices) > 0 else "stop"
-            usage_info = litellm_response.usage
-            response_id = getattr(litellm_response, 'id', f"msg_{uuid.uuid4()}")
-        else:
-            # For backward compatibility - handle dict responses
-            # If response is a dict, use it, otherwise try to convert to dict
-            try:
-                response_dict = litellm_response if isinstance(litellm_response, dict) else litellm_response.dict()
-            except AttributeError:
-                # If .dict() fails, try to use model_dump or __dict__ 
-                try:
-                    response_dict = litellm_response.model_dump() if hasattr(litellm_response, 'model_dump') else litellm_response.__dict__
-                except AttributeError:
-                    # Fallback - manually extract attributes
-                    response_dict = {
-                        "id": getattr(litellm_response, 'id', f"msg_{uuid.uuid4()}"),
-                        "choices": getattr(litellm_response, 'choices', [{}]),
-                        "usage": getattr(litellm_response, 'usage', {})
-                    }
-                    
-            # Extract the content from the response dict
-            choices = response_dict.get("choices", [{}])
-            message = choices[0].get("message", {}) if choices and len(choices) > 0 else {}
-            content_text = message.get("content", "")
-            tool_calls = message.get("tool_calls", None)
-            finish_reason = choices[0].get("finish_reason", "stop") if choices and len(choices) > 0 else "stop"
-            usage_info = response_dict.get("usage", {})
-            response_id = response_dict.get("id", f"msg_{uuid.uuid4()}")
+        # Extract data from ModelResponse object
+        choices = litellm_response.choices
+        message = choices[0].message if choices and len(choices) > 0 else None
+        content_text = message.content if message and hasattr(message, 'content') else ""
+        tool_calls = message.tool_calls if message and hasattr(message, 'tool_calls') else None
+        finish_reason = choices[0].finish_reason if choices and len(choices) > 0 else "stop"
+        usage_info = litellm_response.usage
+        response_id = getattr(litellm_response, 'id', f"msg_{uuid.uuid4()}")
         
         # Create content list for Anthropic format
         content = []
@@ -843,17 +845,38 @@ def convert_litellm_to_anthropic(litellm_response: Union[Dict[str, Any], Any],
             for idx, tool_call in enumerate(tool_calls):
                 logger.debug(f"Processing tool call {idx}: {tool_call}")
                 
-                # Extract function data based on whether it's a dict or object
+                # Extract function data with better object handling
+                function = None
+                tool_id = None
+                name = None
+                arguments = None
+                
+                # Handle different types of tool_call objects
                 if isinstance(tool_call, dict):
-                    function = tool_call.get("function", {})
-                    tool_id = tool_call.get("id", f"tool_{uuid.uuid4()}")
-                    name = function.get("name", "")
-                    arguments = function.get("arguments", "{}")
+                    # Handle dict-style tool calls
+                    if 'function' in tool_call:
+                        function = tool_call['function']
+                    tool_id = tool_call.get('id', f"toolu_{uuid.uuid4().hex[:24]}")
                 else:
-                    function = getattr(tool_call, "function", None)
-                    tool_id = getattr(tool_call, "id", f"tool_{uuid.uuid4()}")
-                    name = getattr(function, "name", "") if function else ""
-                    arguments = getattr(function, "arguments", "{}") if function else "{}"
+                    # Handle object-style tool calls
+                    if hasattr(tool_call, 'function'):
+                        function = tool_call.function
+                    if hasattr(tool_call, 'id'):
+                        tool_id = tool_call.id
+                    else:
+                        tool_id = f"toolu_{uuid.uuid4().hex[:24]}"
+                
+                # Extract name and arguments from function
+                if isinstance(function, dict):
+                    name = function.get('name', '')
+                    arguments = function.get('arguments', {})
+                elif hasattr(function, 'name') and hasattr(function, 'arguments'):
+                    name = function.name
+                    arguments = function.arguments
+                else:
+                    # Default values if we can't extract properly
+                    name = "unknown_function"
+                    arguments = {}
                 
                 # Convert string arguments to dict if needed
                 if isinstance(arguments, str):
@@ -862,6 +885,9 @@ def convert_litellm_to_anthropic(litellm_response: Union[Dict[str, Any], Any],
                     except json.JSONDecodeError:
                         logger.warning(f"Failed to parse tool arguments as JSON: {arguments}")
                         arguments = {"raw": arguments}
+                # Handle object arguments if they have __dict__
+                elif hasattr(arguments, '__dict__'):
+                    arguments = arguments.__dict__
                 
                 logger.debug(f"Adding tool_use block: id={tool_id}, name={name}, input={arguments}")
                 
@@ -883,27 +909,52 @@ def convert_litellm_to_anthropic(litellm_response: Union[Dict[str, Any], Any],
                 tool_calls = [tool_calls]
                 
             for idx, tool_call in enumerate(tool_calls):
-                # Extract function data based on whether it's a dict or object
-                if isinstance(tool_call, dict):
-                    function = tool_call.get("function", {})
-                    tool_id = tool_call.get("id", f"tool_{uuid.uuid4()}")
-                    name = function.get("name", "")
-                    arguments = function.get("arguments", "{}")
-                else:
-                    function = getattr(tool_call, "function", None)
-                    tool_id = getattr(tool_call, "id", f"tool_{uuid.uuid4()}")
-                    name = getattr(function, "name", "") if function else ""
-                    arguments = getattr(function, "arguments", "{}") if function else "{}"
+                # Extract function data with better object handling
+                function = None
+                tool_id = "unknown"
+                name = "unknown"
+                arguments = {}
                 
-                # Convert string arguments to dict if needed
+                # Handle different types of tool_call objects
+                if isinstance(tool_call, dict):
+                    # Handle dict-style tool calls
+                    if 'function' in tool_call:
+                        function = tool_call['function']
+                    if 'id' in tool_call:
+                        tool_id = tool_call['id']
+                else:
+                    # Handle object-style tool calls
+                    if hasattr(tool_call, 'function'):
+                        function = tool_call.function
+                    if hasattr(tool_call, 'id'):
+                        tool_id = tool_call.id
+                
+                # Extract name and arguments from function
+                if isinstance(function, dict):
+                    name = function.get('name', 'unknown')
+                    arguments = function.get('arguments', {})
+                elif hasattr(function, 'name'):
+                    name = function.name
+                    if hasattr(function, 'arguments'):
+                        arguments = function.arguments
+                
+                # Format the arguments for display
                 if isinstance(arguments, str):
                     try:
-                        args_dict = json.loads(arguments)
-                        arguments_str = json.dumps(args_dict, indent=2)
+                        # Try to parse and reformat
+                        arguments_str = json.dumps(json.loads(arguments), indent=2)
                     except json.JSONDecodeError:
+                        # Keep as is if not valid JSON
                         arguments_str = arguments
+                elif hasattr(arguments, '__dict__'):
+                    # Convert object to formatted JSON
+                    arguments_str = json.dumps(arguments.__dict__, indent=2)
                 else:
-                    arguments_str = json.dumps(arguments, indent=2)
+                    # Convert dict or other object to formatted JSON
+                    try:
+                        arguments_str = json.dumps(arguments, indent=2)
+                    except TypeError:
+                        arguments_str = str(arguments)
                 
                 tool_text += f"Tool: {name}\nArguments: {arguments_str}\n\n"
             
@@ -913,13 +964,9 @@ def convert_litellm_to_anthropic(litellm_response: Union[Dict[str, Any], Any],
             else:
                 content.append({"type": "text", "text": tool_text})
         
-        # Get usage information - extract values safely from object or dict
-        if isinstance(usage_info, dict):
-            prompt_tokens = usage_info.get("prompt_tokens", 0)
-            completion_tokens = usage_info.get("completion_tokens", 0)
-        else:
-            prompt_tokens = getattr(usage_info, "prompt_tokens", 0)
-            completion_tokens = getattr(usage_info, "completion_tokens", 0)
+        # Get usage information from response
+        prompt_tokens = usage_info.prompt_tokens
+        completion_tokens = usage_info.completion_tokens
         
         # Map OpenAI finish_reason to Anthropic stop_reason
         stop_reason = None
@@ -1108,43 +1155,79 @@ async def handle_streaming(response_generator, original_request: MessagesRequest
                                 anthropic_tool_index = last_tool_index
                                 
                                 # Extract function info
+                                # First handle dict-style tool calls (typical from LiteLLM)
                                 if isinstance(tool_call, dict):
                                     function = tool_call.get('function', {})
-                                    name = function.get('name', '') if isinstance(function, dict) else ""
-                                    tool_id = tool_call.get('id', f"toolu_{uuid.uuid4().hex[:24]}")
+                                    # Make sure function is treated as dict
+                                    if hasattr(function, '__dict__') and not isinstance(function, dict):
+                                        function = function.__dict__
+                                    
+                                    name = ""
+                                    if isinstance(function, dict):
+                                        name = function.get('name', '')
+                                    elif hasattr(function, 'name'):
+                                        name = function.name
+                                    
+                                    tool_id = ""
+                                    if 'id' in tool_call:
+                                        tool_id = tool_call['id']
+                                    else:
+                                        tool_id = f"toolu_{uuid.uuid4().hex[:24]}"
+                                # Then handle object-style tool calls
                                 else:
-                                    function = getattr(tool_call, 'function', None)
-                                    name = getattr(function, 'name', '') if function else ''
-                                    tool_id = getattr(tool_call, 'id', f"toolu_{uuid.uuid4().hex[:24]}")
+                                    function = None
+                                    if hasattr(tool_call, 'function'):
+                                        function = tool_call.function
+                                    
+                                    name = ""
+                                    if function is not None and hasattr(function, 'name'):
+                                        name = function.name
+                                    
+                                    tool_id = ""
+                                    if hasattr(tool_call, 'id'):
+                                        tool_id = tool_call.id
+                                    else:
+                                        tool_id = f"toolu_{uuid.uuid4().hex[:24]}"
                                 
                                 # Start a new tool_use block
                                 yield f"event: content_block_start\ndata: {json.dumps({'type': 'content_block_start', 'index': anthropic_tool_index, 'content_block': {'type': 'tool_use', 'id': tool_id, 'name': name, 'input': {}}})}\n\n"
                                 current_tool_call = tool_call
                                 tool_content = ""
                             
-                            # Extract function arguments
+                            # Extract function arguments with better object handling
                             arguments = None
+                            # First handle dict-style tool calls
                             if isinstance(tool_call, dict) and 'function' in tool_call:
-                                function = tool_call.get('function', {})
-                                arguments = function.get('arguments', '') if isinstance(function, dict) else ''
+                                function = tool_call['function']
+                                # Handle function as dict
+                                if isinstance(function, dict) and 'arguments' in function:
+                                    arguments = function['arguments']
+                                # Handle function as object
+                                elif hasattr(function, 'arguments'):
+                                    arguments = function.arguments
+                            # Then handle object-style tool calls
                             elif hasattr(tool_call, 'function'):
-                                function = getattr(tool_call, 'function', None)
-                                arguments = getattr(function, 'arguments', '') if function else ''
+                                function = tool_call.function
+                                if hasattr(function, 'arguments'):
+                                    arguments = function.arguments
                             
                             # If we have arguments, send them as a delta
                             if arguments:
                                 # Try to detect if arguments are valid JSON or just a fragment
                                 try:
-                                    # If it's already a dict, use it
+                                    # If it's already a dict, convert to JSON string
                                     if isinstance(arguments, dict):
                                         args_json = json.dumps(arguments)
+                                    # If it's an object with __dict__, convert to JSON
+                                    elif hasattr(arguments, '__dict__'):
+                                        args_json = json.dumps(arguments.__dict__)
+                                    # Otherwise, try to parse as JSON string
                                     else:
-                                        # Otherwise, try to parse it
                                         json.loads(arguments)
                                         args_json = arguments
                                 except (json.JSONDecodeError, TypeError):
-                                    # If it's a fragment, treat it as a string
-                                    args_json = arguments
+                                    # If it's a fragment or can't be parsed, treat as string
+                                    args_json = str(arguments)
                                 
                                 # Add to accumulated tool content
                                 tool_content += args_json if isinstance(args_json, str) else ""
@@ -1236,12 +1319,11 @@ async def create_message(
     raw_request: Request
 ):
     try:
-        # Get request body for logging
-        body = await raw_request.body()
-    
-        # Parse the raw body as JSON since it's bytes
-        body_json = json.loads(body.decode('utf-8'))
-        original_model = body_json.get("model", "unknown")
+        # NOTE: The request is already parsed by FastAPI into a MessagesRequest object
+        # We don't need to manually parse the raw request body, except for logging
+        
+        # For logging, get the original model name
+        original_model = request.original_model or request.model
         
         # Get the display name for logging using our helper
         display_model = ModelHelper.get_display_model_name(original_model)
@@ -1312,13 +1394,21 @@ async def create_message(
                 
     except Exception as e:
         import traceback
+        import sys
+        exc_type, exc_value, exc_traceback = sys.exc_info()
         error_traceback = traceback.format_exc()
+        
+        # Get line number and file info
+        tb = traceback.extract_tb(exc_traceback)
+        filename, line, func, text = tb[-1] if tb else ("unknown", 0, "unknown", "unknown")
         
         # Capture as much info as possible about the error
         error_details = {
             "error": str(e),
             "type": type(e).__name__,
-            "traceback": error_traceback
+            "traceback": error_traceback,
+            "location": f"{filename}:{line} in {func}",
+            "code": text
         }
         
         # Check for LiteLLM-specific attributes
@@ -1335,8 +1425,8 @@ async def create_message(
         # Log all error details
         logger.error(f"Error processing request: {json.dumps(error_details, indent=2)}")
         
-        # Format error for response
-        error_message = f"Error: {str(e)}"
+        # Format error for response with more details
+        error_message = f"Error: {str(e)}\nLocation: {error_details['location']}\nCode: {error_details['code']}"
         if 'message' in error_details and error_details['message']:
             error_message += f"\nMessage: {error_details['message']}"
         if 'response' in error_details and error_details['response']:
@@ -1352,6 +1442,7 @@ async def count_tokens(
     raw_request: Request
 ):
     try:
+        # The request is already parsed by FastAPI into a TokenCountRequest object
         # Get the original model name
         original_model = request.original_model or request.model
         
@@ -1408,9 +1499,27 @@ async def count_tokens(
             
     except Exception as e:
         import traceback
+        import sys
+        exc_type, exc_value, exc_traceback = sys.exc_info()
         error_traceback = traceback.format_exc()
-        logger.error(f"Error counting tokens: {str(e)}\n{error_traceback}")
-        raise HTTPException(status_code=500, detail=f"Error counting tokens: {str(e)}")
+        
+        # Get line number and file info
+        tb = traceback.extract_tb(exc_traceback)
+        filename, line, func, text = tb[-1] if tb else ("unknown", 0, "unknown", "unknown")
+        
+        # Log detailed error info
+        error_details = {
+            "error": str(e),
+            "type": type(e).__name__,
+            "location": f"{filename}:{line} in {func}",
+            "code": text,
+            "traceback": error_traceback
+        }
+        logger.error(f"Error counting tokens: {json.dumps(error_details, indent=2)}")
+        
+        # Return error with more details
+        error_message = f"Error counting tokens: {str(e)}\nLocation: {error_details['location']}\nCode: {error_details['code']}"
+        raise HTTPException(status_code=500, detail=error_message)
 
 @app.get("/")
 async def root():
