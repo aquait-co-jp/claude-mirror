@@ -18,19 +18,23 @@ import sys
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure logging
+# Configure logging with more verbose output
 logging.basicConfig(
-    level=logging.WARN,  # Change to INFO level to show more details
+    level=logging.INFO,  # Changed to INFO level for more details
     format='%(asctime)s - %(levelname)s - %(message)s',
 )
 logger = logging.getLogger(__name__)
 
-# Configure uvicorn to be quieter
+# Import uvicorn
 import uvicorn
-# Tell uvicorn's loggers to be quiet
-logging.getLogger("uvicorn").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
+
+# Configure uvicorn with more verbose logging
+logging.getLogger("uvicorn").setLevel(logging.INFO)
+logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+logging.getLogger("uvicorn.error").setLevel(logging.INFO)
+
+print("\n======= LOGGING INITIALIZED =======")
+sys.stdout.flush()
 
 # Create a filter to block any log messages containing specific strings
 class MessageFilter(logging.Filter):
@@ -81,13 +85,32 @@ USE_OPENAI_MODELS = True
 
 app = FastAPI()
 
-# Get API keys from environment
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+# Add explicit startup message
+print("\n======= STARTING SERVER: Environment Check =======")
+sys.stdout.flush()
+
+# Get API keys from environment and validate they exist
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    print("ERROR: OPENAI_API_KEY environment variable is required but not set!")
+    sys.exit(1)
+else:
+    print(f"✅ OPENAI_API_KEY found: {OPENAI_API_KEY[:5]}...")
+
+# Anthropic key only required if not using OpenAI models
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+if not ANTHROPIC_API_KEY and not USE_OPENAI_MODELS:
+    print("ERROR: ANTHROPIC_API_KEY environment variable is required when USE_OPENAI_MODELS=False!")
+    sys.exit(1)
+elif ANTHROPIC_API_KEY:
+    print(f"✅ ANTHROPIC_API_KEY found: {ANTHROPIC_API_KEY[:5]}...")
+else:
+    print("ℹ️ ANTHROPIC_API_KEY not set, but not required since USE_OPENAI_MODELS=True")
 
 # Get model mapping configuration from environment
 BIG_MODEL = os.environ.get("BIG_MODEL", "gpt-4o")
 SMALL_MODEL = os.environ.get("SMALL_MODEL", "gpt-4o-mini")
+print(f"ℹ️ Using model mapping: BIG_MODEL={BIG_MODEL}, SMALL_MODEL={SMALL_MODEL}")
 
 # Models for Anthropic API requests
 class ContentBlockText(BaseModel):
@@ -1375,5 +1398,10 @@ if __name__ == "__main__":
         print("Run with: uvicorn server:app --reload --host 0.0.0.0 --port 8082")
         sys.exit(0)
     
-    # Configure uvicorn to run with minimal logs
-    uvicorn.run(app, host="0.0.0.0", port=8082, log_level="error")
+    print("\n======= STARTING SERVER: Direct execution mode =======")
+    print("Server is starting at http://0.0.0.0:8082")
+    print("Press CTRL+C to stop the server")
+    sys.stdout.flush()
+    
+    # Configure uvicorn to run with more visible logs
+    uvicorn.run(app, host="0.0.0.0", port=8082, log_level="info")
