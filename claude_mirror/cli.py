@@ -76,11 +76,11 @@ def display_config(config):
     # Display model categories
     print("\nModel Mappings:")
     if "model_categories" in config and config["model_categories"]:
-        big_config = config["model_categories"].get("big", {})
-        if big_config:
-            print(f"  • Big model: {big_config.get('provider', '')}/{big_config.get('deployment', '')}")
+        large_config = config["model_categories"].get("large", {})
+        if large_config:
+            print(f"  • Large model: {large_config.get('provider', '')}/{large_config.get('deployment', '')}")
         else:
-            print("  • Big model: Not configured")
+            print("  • Large model: Not configured")
             
         small_config = config["model_categories"].get("small", {})
         if small_config:
@@ -165,7 +165,7 @@ def configure_provider(config, provider_name):
     return config
 
 def configure_model_category(config, category):
-    """Configure a model category (big or small)."""
+    """Configure a model category (large or small)."""
     if "model_categories" not in config:
         config["model_categories"] = {}
     
@@ -176,7 +176,7 @@ def configure_model_category(config, category):
     providers = list(config["providers"].keys())
     
     print(f"\n=== {category.title()} Model Configuration ===\n")
-    if category == "big":
+    if category == "large":
         print("Configure which model to use for computationally intensive tasks.")
         print("Claude Code uses this model for complex reasoning and generation.")
     else:
@@ -192,18 +192,18 @@ def configure_model_category(config, category):
     
     # Get deployment name with suggestions
     if provider == "openai":
-        if category == "big":
-            print("Enter model name for 'big' models (suggestion: gpt-4o)")
+        if category == "large":
+            print("Enter model name for 'large' models (suggestion: gpt-4o)")
         else:
             print("Enter model name for 'small' models (suggestion: gpt-4o-mini)")
     elif provider == "azure":
-        if category == "big":
-            print("Enter deployment name for 'big' models (example: your-gpt4-deployment)")
+        if category == "large":
+            print("Enter deployment name for 'large' models (example: your-gpt4-deployment)")
         else:
             print("Enter deployment name for 'small' models (example: your-gpt35-deployment)")
     elif provider == "databricks":
-        if category == "big":
-            print("Enter model name for 'big' models (suggestion: databricks-claude-3-sonnet)")
+        if category == "large":
+            print("Enter model name for 'large' models (suggestion: databricks-claude-3-sonnet)")
         else:
             print("Enter model name for 'small' models (suggestion: databricks-claude-3-haiku)")
     
@@ -270,7 +270,7 @@ def interactive_setup():
     
     print("\nAbout Model Categories:")
     print("Claude Code uses two categories of models:")
-    print("  • Big model: Used for complex reasoning, code generation, and in-depth assistance")
+    print("  • Large model: Used for complex reasoning, code generation, and in-depth assistance")
     print("  • Small model: Used for quick responses, simple queries, and routine tasks")
     print("\nYou'll need to configure which provider and model to use for each category.")
     
@@ -306,7 +306,7 @@ def interactive_setup():
         print("2. Add/Update Azure OpenAI Configuration")
         print("3. Add/Update Databricks Configuration")
         print("4. Remove a Provider")
-        print("5. Configure 'Big' Model")
+        print("5. Configure 'Large' Model")
         print("6. Configure 'Small' Model")
         print("7. Save and Exit")
         print("8. Exit Without Saving")
@@ -331,7 +331,7 @@ def interactive_setup():
             else:
                 print(f"Provider '{provider}' not found.")
         elif choice == '5':
-            config = configure_model_category(config, "big")
+            config = configure_model_category(config, "large")
         elif choice == '6':
             config = configure_model_category(config, "small")
         elif choice == '7':

@@ -241,7 +241,7 @@ def map_model(model_name):
         if "haiku" in model_name.lower():
             return map_model("small")  # Map to small category
         else:
-            return map_model("big")    # Map to big category
+            return map_model("large")  # Map to large category
             
     # Default prefix with openai if unrecognized 
     return f"openai/{model_name}"

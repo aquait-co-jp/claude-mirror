@@ -13,14 +13,29 @@ Clone the repository and install locally:
 git clone https://github.com/ericmichael/claude-mirror.git
 cd claude-mirror
 
-# Run the install script
+# Run the install script (recommended)
 ./install.sh
+```
 
-# Or manually install with uv (recommended)
+The install script will:
+1. Install the package using your current Python environment
+2. Create a launcher script that works across Python environments
+3. Offer to install the launcher globally to make it available from any terminal
+
+You can also install manually if preferred:
+
+```bash
+# With uv (recommended)
 uv pip install -e .
 
 # Or with pip
 pip install -e .
+```
+
+If you install manually, you may need to ensure your Python environment is activated when running commands, or use the Python module syntax:
+
+```bash
+python -m claude_mirror.cli
 ```
 
 Once installed, run the interactive setup:
@@ -46,7 +61,12 @@ claude-mirror
 
 1. **Install the package**:
    ```bash
-   pip install claude-mirror
+   # Clone the repository
+   git clone https://github.com/ericmichael/claude-mirror.git
+   cd claude-mirror
+   
+   # Run the install script
+   ./install.sh
    ```
 
 2. **Run the interactive setup**:

@@ -18,7 +18,7 @@ providers:
 # Mapping from model categories to provider-specific models
 model_categories:
   # Standard OpenAI mapping
-  big:
+  large:
     provider: openai
     deployment: gpt-4o
   
@@ -27,7 +27,7 @@ model_categories:
     deployment: gpt-4o-mini
   
   # Example Azure mapping
-  # big:
+  # large:
   #   provider: azure
   #   deployment: gpt4-deployment
   # 
@@ -36,7 +36,7 @@ model_categories:
   #   deployment: gpt35-deployment
   
   # Example Databricks mapping
-  # big:
+  # large:
   #   provider: databricks
   #   deployment: databricks-claude-3-sonnet
   # 
