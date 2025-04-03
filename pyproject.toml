@@ -1,7 +1,7 @@
 [project]
-name = "anthropic-proxy"
+name = "claude-azure"
 version = "0.1.0"
-description = "Proxy that translates between Anthropic API and LiteLLM"
+description = "Connect Claude Code to Azure OpenAI and other OpenAI-compatible providers"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -11,5 +11,13 @@ dependencies = [
     "pydantic>=2.0.0",
     "litellm>=1.40.14",
     "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.0",
 ]
+
+[project.scripts]
+claude-azure = "claude_azure.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 

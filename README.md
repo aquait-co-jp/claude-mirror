@@ -1,8 +1,39 @@
-# Claude Code with Any Provider 🧙‍♂️🔄
+# Claude Azure 🧙‍♂️🔄
 
 **Use Claude Code with OpenAI, Azure, Databricks and More** 🤝
 
 A proxy server that lets you use Claude Code with OpenAI models like GPT-4o, Azure OpenAI deployments, or Databricks endpoints. 🌉
+
+## Installation
+
+Clone the repository and install locally:
+
+```bash
+# Clone the repository
+git clone https://github.com/ericmichael/claude-azure.git
+cd claude-azure
+
+# Run the install script
+./install.sh
+
+# Or manually install with uv (recommended)
+uv pip install -e .
+
+# Or with pip
+pip install -e .
+```
+
+Once installed, run the interactive setup:
+
+```bash
+claude-azure --setup
+```
+
+This will guide you through creating a configuration file with your API keys and model mappings. After setup, run:
+
+```bash
+claude-azure
+```
 
 
 ![Claude Code but with OpenAI Models](pic.png)
@@ -16,22 +47,19 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o, Azu
 
 ### Setup 🛠️
 
-1. **Clone this repository**:
+1. **Install the package**:
    ```bash
-   git clone https://github.com/ericmichael/claude-code-azure.git
-   cd claude-code-azure
+   pip install claude-azure
    ```
 
-2. **Install UV**:
+2. **Run the interactive setup**:
    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+   claude-azure --setup
    ```
 
-3. **Configure `config.yaml`**:
-
-   Strict configuration is required with no default fallbacks. The system uses a single YAML configuration file with direct values.
-
-   **Required: Create `config.yaml`**:
+   This will guide you through creating a configuration file at `~/.claude-azure/config.yaml`.
+   
+   Alternatively, you can manually create a configuration file:
    
    ```yaml
    # Provider configuration
@@ -58,10 +86,26 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o, Azu
      small: openai/gpt-4o-mini     # Claude-3-Haiku maps to this
    ```
 
-4. **Start the proxy server**:
+3. **Run Claude Azure**:
    ```bash
-   uv run uvicorn server:app --host 0.0.0.0 --port 8082
+   claude-azure
    ```
+
+### Command-line Options
+
+```bash
+# Normal usage (no arguments needed)
+claude-azure
+
+# Interactive setup to create/update config
+claude-azure --setup
+
+# Debug mode with detailed logs
+claude-azure --debug  
+
+# Use a specific config file
+claude-azure --config /path/to/my/config.yaml
+```
 
 ### Using with Claude Code 🎮
 
@@ -70,12 +114,13 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o, Azu
    npm install -g @anthropic-ai/claude-code
    ```
 
-2. **Connect to your proxy**:
-   ```bash
-   ANTHROPIC_BASE_URL=http://localhost:8082 claude
-   ```
+2. **The claude-azure command handles everything**:
+   - Starts the proxy server
+   - Configures the environment
+   - Launches Claude Code connected to the proxy
+   - Automatically shuts down the proxy when you exit Claude
 
-3. **That's it!** Your Claude Code client will now use your configured models through the proxy. 🎯
+4. **That's it!** Your Claude Code client will now use your configured models through the proxy. 🎯
 
 ## Model Mapping Rules 🗺️
 
