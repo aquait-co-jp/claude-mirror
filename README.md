@@ -35,9 +35,6 @@ This will guide you through creating a configuration file with your API keys and
 claude-azure
 ```
 
-
-![Claude Code but with OpenAI Models](pic.png)
-
 ## Quick Start ⚡
 
 ### Prerequisites
