@@ -1,0 +1,13 @@
+# Basic configuration - Copy to config.yaml
+providers:
+  openai:
+    api_key: ${OPENAI_API_KEY}
+
+model_categories:
+  big:
+    provider: openai
+    deployment: gpt-4o
+  
+  small:
+    provider: openai
+    deployment: gpt-4o-mini

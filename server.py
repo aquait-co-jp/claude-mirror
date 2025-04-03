@@ -25,6 +25,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import config loader
+try:
+    from config_loader import config, map_to_litellm_model, get_provider_params
+    USE_CONFIG = True
+    logger.info("Using config.yaml for configuration")
+except Exception as e:
+    logger.warning(f"Failed to load config_loader: {e}. Falling back to environment variables.")
+    USE_CONFIG = False
+
 # Import uvicorn
 import uvicorn
 
@@ -79,108 +88,72 @@ for handler in logger.handlers:
     if isinstance(handler, logging.StreamHandler):
         handler.setFormatter(ColorizedFormatter('%(asctime)s - %(levelname)s - %(message)s'))
 
-# Flag to enable model swapping between Anthropic and OpenAI
-# Always use OpenAI models
-USE_OPENAI_MODELS = True
-
 # Add explicit startup message
 print("\n======= STARTING SERVER: Environment Check =======")
 sys.stdout.flush()
 
-# Get API keys from environment and validate at least one provider is configured
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY")
-AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT") 
-DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN")
-DATABRICKS_HOST = os.environ.get("DATABRICKS_HOST")
+if USE_CONFIG:
+    # Use strict configuration from config_loader (no fallbacks)
+    print("Loading model configuration from config.yaml with STRICT validation (no fallbacks)...")
+    
+    # We now use direct mapping without swapping flags - mapping is defined in the config
+    
+    # Check available providers based on config
+    has_openai = "openai" in config["providers"] and "api_key" in config["providers"]["openai"] and config["providers"]["openai"]["api_key"]
+    has_anthropic = "anthropic" in config["providers"] and "api_key" in config["providers"]["anthropic"] and config["providers"]["anthropic"]["api_key"]
+    has_azure = ("azure" in config["providers"] and 
+                "api_key" in config["providers"]["azure"] and config["providers"]["azure"]["api_key"] and
+                "endpoint" in config["providers"]["azure"] and config["providers"]["azure"]["endpoint"])
+    has_databricks = ("databricks" in config["providers"] and 
+                     "token" in config["providers"]["databricks"] and config["providers"]["databricks"]["token"] and
+                     "host" in config["providers"]["databricks"] and config["providers"]["databricks"]["host"])
+    
+    # Store values from configured providers only (no default fallbacks)
+    # For any provider not in the config, we'll fail if it's requested
+    OPENAI_API_KEY = config["providers"]["openai"]["api_key"] if has_openai else None
+    ANTHROPIC_API_KEY = config["providers"]["anthropic"]["api_key"] if has_anthropic else None
+    AZURE_OPENAI_API_KEY = config["providers"]["azure"]["api_key"] if has_azure else None
+    AZURE_OPENAI_ENDPOINT = config["providers"]["azure"]["endpoint"] if has_azure else None
+    AZURE_OPENAI_API_VERSION = config["providers"]["azure"]["api_version"] if has_azure else None
+    DATABRICKS_TOKEN = config["providers"]["databricks"]["token"] if has_databricks else None
+    DATABRICKS_HOST = config["providers"]["databricks"]["host"] if has_databricks else None
+    
+    # Require both categories to be configured explicitly - no defaults
+    if "big" not in config["model_categories"]:
+        raise ValueError("Error: 'big' category must be explicitly configured in config.yaml")
+        
+    if "small" not in config["model_categories"]:
+        raise ValueError("Error: 'small' category must be explicitly configured in config.yaml")
+        
+    # No fallbacks - we need these values for legacy code paths but they come directly from config
+    BIG_MODEL = config["model_categories"]["big"]["deployment"]
+    SMALL_MODEL = config["model_categories"]["small"]["deployment"]
+    
+    # Log which configurations are present
+    print("Available provider configurations:")
+    print(f"  - OpenAI API: {'CONFIGURED' if has_openai else 'NOT CONFIGURED'}")
+    print(f"  - Azure OpenAI: {'CONFIGURED' if has_azure else 'NOT CONFIGURED'}")
+    print(f"  - Databricks: {'CONFIGURED' if has_databricks else 'NOT CONFIGURED'}")
+    print(f"  - Anthropic API: {'CONFIGURED' if has_anthropic else 'NOT CONFIGURED'}")
+    
+    # Log model categories
+    print("\nConfigured model categories:")
+    for category, model_config in config["model_categories"].items():
+        print(f"  - {category}: {model_config['provider']}/{model_config['deployment']}")
+    
+    # No fallbacks with Azure deployments either - if model mappings reference azure, they must be defined
+    AZURE_DEPLOYMENTS = {}
+    if has_azure:
+        for category, model_config in config["model_categories"].items():
+            if model_config["provider"] == "azure":
+                AZURE_DEPLOYMENTS[model_config["deployment"]] = model_config["deployment"]
 
-# Check if the required configurations are present
-has_openai = OPENAI_API_KEY is not None
-has_azure = AZURE_OPENAI_API_KEY is not None and AZURE_OPENAI_ENDPOINT is not None
-has_databricks = DATABRICKS_TOKEN is not None and DATABRICKS_HOST is not None
-
-# Anthropic key only required if not using OpenAI models
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-if not ANTHROPIC_API_KEY and not USE_OPENAI_MODELS:
-    print("ERROR: ANTHROPIC_API_KEY environment variable is required when USE_OPENAI_MODELS=False!")
-    sys.exit(1)
-
-# Log which configurations are present
-print("Available provider configurations:")
-print(f"  - OpenAI API: {'CONFIGURED' if has_openai else 'NOT CONFIGURED'}")
-print(f"  - Azure OpenAI: {'CONFIGURED' if has_azure else 'NOT CONFIGURED'}")
-print(f"  - Databricks: {'CONFIGURED' if has_databricks else 'NOT CONFIGURED'}")
-print(f"  - Anthropic API: {'CONFIGURED' if ANTHROPIC_API_KEY else 'NOT CONFIGURED'}")
-
-# No default fallback between providers - each model prefix requires its specific configuration
-
-# Log available configurations
-if has_openai:
-    print(f"✅ OPENAI_API_KEY found: {OPENAI_API_KEY[:5]}...")
-
-if ANTHROPIC_API_KEY:
-    print(f"✅ ANTHROPIC_API_KEY found: {ANTHROPIC_API_KEY[:5]}...")
 else:
-    print("ℹ️ ANTHROPIC_API_KEY not set, but not required since USE_OPENAI_MODELS=True")
-
-# Azure OpenAI configuration
-AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION")
-if has_azure and not AZURE_OPENAI_API_VERSION:
-    print("⚠️ ERROR: AZURE_OPENAI_API_VERSION environment variable is required for Azure OpenAI but not set!")
-    sys.exit(1)
-if has_azure:
-    print(f"✅ Azure OpenAI configuration found")
-    print(f"  - Endpoint: {AZURE_OPENAI_ENDPOINT}")
-    print(f"  - API Version: {AZURE_OPENAI_API_VERSION}")
-
-# Azure Databricks configuration
-if has_databricks:
-    print(f"✅ Azure Databricks configuration found")
-    print(f"  - Host: {DATABRICKS_HOST}")
-
-# Get model mapping configuration from environment
-# Do not use default values - require explicit configuration
-BIG_MODEL = os.environ.get("BIG_MODEL")
-if not BIG_MODEL:
-    print("⚠️ ERROR: BIG_MODEL environment variable is required but not set!")
-    sys.exit(1)
-
-SMALL_MODEL = os.environ.get("SMALL_MODEL")
-if not SMALL_MODEL:
-    print("⚠️ ERROR: SMALL_MODEL environment variable is required but not set!")
-    sys.exit(1)
-
-print(f"ℹ️ Using configured model mapping: BIG_MODEL={BIG_MODEL}, SMALL_MODEL={SMALL_MODEL}")
-
-# Map model names to Azure deployment names - no defaults
-AZURE_DEPLOYMENTS = {}
-
-# Require explicit deployment name configuration for each model
-if has_azure:
-    AZURE_GPT4O_DEPLOYMENT = os.environ.get("AZURE_GPT4O_DEPLOYMENT")
-    if not AZURE_GPT4O_DEPLOYMENT:
-        print("⚠️ ERROR: AZURE_GPT4O_DEPLOYMENT environment variable is required for Azure OpenAI but not set!")
-        sys.exit(1)
-    AZURE_DEPLOYMENTS["gpt-4o"] = AZURE_GPT4O_DEPLOYMENT
-    
-    AZURE_GPT4O_MINI_DEPLOYMENT = os.environ.get("AZURE_GPT4O_MINI_DEPLOYMENT")
-    if not AZURE_GPT4O_MINI_DEPLOYMENT:
-        print("⚠️ ERROR: AZURE_GPT4O_MINI_DEPLOYMENT environment variable is required for Azure OpenAI but not set!")
-        sys.exit(1)
-    AZURE_DEPLOYMENTS["gpt-4o-mini"] = AZURE_GPT4O_MINI_DEPLOYMENT
-
-if has_databricks:
-    AZURE_CLAUDE_SONNET_DEPLOYMENT = os.environ.get("AZURE_CLAUDE_SONNET_DEPLOYMENT")
-    if not AZURE_CLAUDE_SONNET_DEPLOYMENT:
-        print("⚠️ ERROR: AZURE_CLAUDE_SONNET_DEPLOYMENT environment variable is required for Databricks but not set!")
-        sys.exit(1)
-    AZURE_DEPLOYMENTS["claude-3-sonnet-20240229"] = AZURE_CLAUDE_SONNET_DEPLOYMENT
-    
-    AZURE_CLAUDE_HAIKU_DEPLOYMENT = os.environ.get("AZURE_CLAUDE_HAIKU_DEPLOYMENT") 
-    if not AZURE_CLAUDE_HAIKU_DEPLOYMENT:
-        print("⚠️ ERROR: AZURE_CLAUDE_HAIKU_DEPLOYMENT environment variable is required for Databricks but not set!")
-        sys.exit(1)
-    AZURE_DEPLOYMENTS["claude-3-haiku-20240307"] = AZURE_CLAUDE_HAIKU_DEPLOYMENT
+    # Config file required - no fallback to environment variables
+    raise ValueError("""
+ERROR: Configuration file 'config.yaml' is required and must be properly set up.
+Please create this file with your model configuration - see config.yaml.example.
+    """)
 
 class ModelHelper:
     """Helper class for model handling operations to reduce code duplication."""
@@ -230,92 +203,125 @@ class ModelHelper:
     
     @staticmethod
     def map_model_for_openai(original_model):
-        """Map Anthropic models to OpenAI equivalents when USE_OPENAI_MODELS is True."""
-        # Remove anthropic/ prefix if it exists
-        mapped_model = original_model
-        if mapped_model.startswith('anthropic/'):
-            mapped_model = mapped_model[10:]
-            
-        # Azure OpenAI - handle Azure deployments
-        if mapped_model.startswith('azure/'):
-            # Keep as is, already specifies azure deployment
-            logger.debug(f"📌 MODEL MAPPING: {original_model} (Azure deployment)")
+        """Map models based on configuration"""
+        # If the model is a category name, map it according to config
+        if original_model in config["model_categories"].keys():
+            mapped_model = map_to_litellm_model(original_model)
+            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {mapped_model} (category mapping)")
             return mapped_model
             
-        # Handle Azure Databricks Claude models
-        elif mapped_model.startswith('databricks-claude'):
-            # Already in correct format for Databricks
-            new_model = f"databricks/{mapped_model}"
-            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model} (Databricks Claude)")
-            return new_model
+        # Keep explicit provider prefixes as is
+        if any(original_model.startswith(prefix) for prefix in ['openai/', 'azure/', 'databricks/']):
+            return original_model
             
-        # Special case for direct Databricks model references in client code
-        elif 'databricks-claude' in mapped_model.lower():
-            # Already in correct format for Databricks
-            new_model = f"databricks/{mapped_model}"
-            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model} (Databricks Claude)")
-            return new_model
+        # Handle Anthropic models - map to configured alternatives if needed
+        if original_model.startswith('anthropic/') or 'claude' in original_model.lower():
+            clean_model = ModelHelper.get_clean_model_name(original_model)
             
-        # Swap Haiku with small model (default: gpt-4o-mini)
-        elif 'haiku' in mapped_model.lower():
-            # Use OpenAI mapping for Haiku models
-            new_model = f"openai/{SMALL_MODEL}"
-            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-            return new_model
+            # Map to appropriate category based on model type
+            if 'haiku' in clean_model.lower():
+                if 'small' not in config["model_categories"]:
+                    raise HTTPException(status_code=400, detail="Cannot map Claude Haiku model: 'small' category not configured")
+                mapped_model = map_to_litellm_model('small')
+                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {mapped_model}")
+                return mapped_model
+            
+            elif 'sonnet' in clean_model.lower() or 'opus' in clean_model.lower():
+                if 'big' not in config["model_categories"]:
+                    raise HTTPException(status_code=400, detail="Cannot map Claude Sonnet/Opus model: 'big' category not configured")
+                mapped_model = map_to_litellm_model('big')
+                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {mapped_model}")
+                return mapped_model
         
-        # Swap any Sonnet model with big model (default: gpt-4o)
-        elif 'sonnet' in mapped_model.lower():
-            # Use OpenAI mapping for Sonnet models
-            new_model = f"openai/{BIG_MODEL}"
-            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-            return new_model
+        # No defaults for unrecognized models - require explicit provider prefix
+        if not any(original_model.startswith(prefix) for prefix in ['openai/', 'azure/', 'databricks/', 'anthropic/']):
+            raise HTTPException(status_code=400, detail=f"Unrecognized model: {original_model}. Must use explicit provider prefix or a configured model category.")
         
-        # Keep the model as is but add openai prefix if not already present
-        elif not any(mapped_model.startswith(prefix) for prefix in ['openai/', 'azure/', 'databricks/']):
-            new_model = f"openai/{mapped_model}"
-            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-            return new_model
-        
-        return mapped_model
+        return original_model
     
     @staticmethod
     def configure_provider_parameters(model, litellm_request):
         """Configure provider-specific parameters based on the model."""
-        if model.startswith("openai/"):
-            if not has_openai:
-                raise HTTPException(status_code=400, detail="OpenAI API key required but not configured")
-            litellm_request["api_key"] = OPENAI_API_KEY
-            logger.debug(f"Using OpenAI API key for model: {model}")
-        elif model.startswith("anthropic/"):
-            if not ANTHROPIC_API_KEY:
-                raise HTTPException(status_code=400, detail="Anthropic API key required but not configured")
-            litellm_request["api_key"] = ANTHROPIC_API_KEY
-            logger.debug(f"Using Anthropic API key for model: {model}")
-        elif model.startswith("azure/"):
-            if not has_azure:
-                raise HTTPException(status_code=400, detail="Azure OpenAI configuration required but not configured")
-            litellm_request["api_key"] = AZURE_OPENAI_API_KEY
-            litellm_request["api_base"] = AZURE_OPENAI_ENDPOINT
-            litellm_request["api_version"] = AZURE_OPENAI_API_VERSION
-            # Extract the deployment name from azure/deployment_name
-            deployment_name = model[6:]
-            litellm_request["model"] = f"azure/{deployment_name}"
-            logger.debug(f"Using Azure OpenAI configuration for deployment: {deployment_name}")
-        elif model.startswith("databricks/"):
-            if not has_databricks:
-                raise HTTPException(status_code=400, detail="Databricks configuration required but not configured")
-            # Extract the Databricks model name
-            databricks_model = model[11:]
-            # Set up Databricks-specific configuration
-            litellm_request["api_key"] = DATABRICKS_TOKEN
-            litellm_request["api_base"] = f"{DATABRICKS_HOST}/serving-endpoints/{databricks_model}"
-            litellm_request["model"] = "databricks"
-            logger.debug(f"Using Databricks configuration for model: {databricks_model}")
+        if USE_CONFIG:
+            # Handle category references
+            if model in config["model_categories"].keys():
+                model = map_to_litellm_model(model)
+            
+            # Determine provider from model string - no defaults
+            provider = None
+            if model.startswith("openai/"):
+                provider = "openai"
+            elif model.startswith("anthropic/"):
+                provider = "anthropic"
+            elif model.startswith("azure/"):
+                provider = "azure"
+            elif model.startswith("databricks/"):
+                provider = "databricks"
+            else:
+                # No default provider - require explicit provider prefix
+                raise HTTPException(status_code=400, 
+                    detail="Unrecognized model prefix. Please specify model with explicit provider prefix or use a category name.")
+            
+            # Check if provider is configured
+            if provider not in config["providers"]:
+                raise HTTPException(status_code=400, detail=f"{provider} configuration required but not configured")
+            
+            # Get provider-specific parameters
+            params = get_provider_params(model)
+            
+            # Update the request with provider parameters
+            for key, value in params.items():
+                litellm_request[key] = value
+            
+            if provider == "azure":
+                # Extract the deployment name from azure/deployment_name
+                deployment_name = model[6:]
+                litellm_request["model"] = f"azure/{deployment_name}"
+                logger.debug(f"Using Azure OpenAI configuration for deployment: {deployment_name}")
+            elif provider == "databricks":
+                # Extract the Databricks model name
+                databricks_model = model.split("/")[-1]
+                litellm_request["model"] = "databricks"
+                logger.debug(f"Using Databricks configuration for model: {databricks_model}")
+            
+            return litellm_request
         else:
-            # Unknown model prefix, require explicit provider specification
-            raise HTTPException(status_code=400, 
-                detail="Unrecognized model prefix. Please specify model with explicit provider prefix: 'openai/', 'anthropic/', 'azure/', or 'databricks/'.")
-        return litellm_request
+            # Legacy provider configuration
+            if model.startswith("openai/"):
+                if not has_openai:
+                    raise HTTPException(status_code=400, detail="OpenAI API key required but not configured")
+                litellm_request["api_key"] = OPENAI_API_KEY
+                logger.debug(f"Using OpenAI API key for model: {model}")
+            elif model.startswith("anthropic/"):
+                if not ANTHROPIC_API_KEY:
+                    raise HTTPException(status_code=400, detail="Anthropic API key required but not configured")
+                litellm_request["api_key"] = ANTHROPIC_API_KEY
+                logger.debug(f"Using Anthropic API key for model: {model}")
+            elif model.startswith("azure/"):
+                if not has_azure:
+                    raise HTTPException(status_code=400, detail="Azure OpenAI configuration required but not configured")
+                litellm_request["api_key"] = AZURE_OPENAI_API_KEY
+                litellm_request["api_base"] = AZURE_OPENAI_ENDPOINT
+                litellm_request["api_version"] = AZURE_OPENAI_API_VERSION
+                # Extract the deployment name from azure/deployment_name
+                deployment_name = model[6:]
+                litellm_request["model"] = f"azure/{deployment_name}"
+                logger.debug(f"Using Azure OpenAI configuration for deployment: {deployment_name}")
+            elif model.startswith("databricks/"):
+                if not has_databricks:
+                    raise HTTPException(status_code=400, detail="Databricks configuration required but not configured")
+                # Extract the Databricks model name
+                databricks_model = model[11:]
+                # Set up Databricks-specific configuration
+                litellm_request["api_key"] = DATABRICKS_TOKEN
+                litellm_request["api_base"] = f"{DATABRICKS_HOST}/serving-endpoints/{databricks_model}"
+                litellm_request["model"] = "databricks"
+                logger.debug(f"Using Databricks configuration for model: {databricks_model}")
+            else:
+                # Unknown model prefix, require explicit provider specification
+                raise HTTPException(status_code=400, 
+                    detail="Unrecognized model prefix. Please specify model with explicit provider prefix: 'openai/', 'anthropic/', 'azure/', or 'databricks/'.")
+            return litellm_request
 
 app = FastAPI()
 
@@ -369,31 +375,16 @@ class ModelRequestBase(BaseModel):
         # Store the original model name
         original_model = v
         
-        # Check if we're using OpenAI models and need to swap
-        if USE_OPENAI_MODELS:
-            # Map the model using our helper method
-            v = ModelHelper.map_model_for_openai(v)
-                
-            # Store the original model in the values dictionary
-            # This will be accessible as request.original_model
-            values = info.data
-            if isinstance(values, dict):
-                values['original_model'] = original_model
-                
-            return v
-        else:
-            # Original behavior - ensure anthropic/ prefix
-            if not v.startswith('anthropic/'):
-                new_model = f"anthropic/{v}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-                
-                # Store original model
-                values = info.data
-                if isinstance(values, dict):
-                    values['original_model'] = original_model
-                    
-                return new_model
-            return v
+        # Map the model using our helper method - no conditional swapping
+        v = ModelHelper.map_model_for_openai(v)
+            
+        # Store the original model in the values dictionary
+        # This will be accessible as request.original_model
+        values = info.data
+        if isinstance(values, dict):
+            values['original_model'] = original_model
+            
+        return v
 
 class MessagesRequest(ModelRequestBase):
     max_tokens: int
@@ -726,7 +717,7 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
     
     # Cap max_tokens for OpenAI models to their limit of 16384
     max_tokens = anthropic_request.max_tokens
-    if anthropic_request.model.startswith("openai/") or USE_OPENAI_MODELS:
+    if anthropic_request.model.startswith("openai/"):
         max_tokens = min(max_tokens, 16384)
         logger.debug(f"Capping max_tokens to 16384 for OpenAI model (original value: {anthropic_request.max_tokens})")
     

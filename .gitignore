@@ -1,5 +1,9 @@
-# Environment variables
+# Secret/environment configuration
 .env
+.env.*
+!.env.example
+config.yaml
+!config.yaml.example
 
 # Python
 __pycache__/
@@ -27,8 +31,11 @@ wheels/
 venv/
 env/
 ENV/
+.venv/
+.python-version
 
 # Logs
+logs/
 *.log
 
 # IDE specific files
@@ -36,3 +43,20 @@ ENV/
 .vscode/
 *.swp
 *.swo
+.DS_Store
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# Archive files
+*.zip
+*.gz
+*.tar
+*.tgz
+
+# Local runtime files
+.uvicorn.pid

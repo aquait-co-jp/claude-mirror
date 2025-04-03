@@ -12,6 +12,7 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
 ### Prerequisites
 
 - OpenAI API key 🔑
+- Optional: Azure OpenAI or Databricks endpoints
 
 ### Setup 🛠️
 
@@ -26,13 +27,43 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
     curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-3. **Configure your API keys**:
-   Create a `.env` file with:
+3. **Configure `config.yaml` and `.env`**:
+
+   Strict configuration is required with no default fallbacks. The system uses YAML configuration with clear model mapping.
+
+   **Required: Create `config.yaml`**:
+   
+   ```yaml
+   # Model Provider Configuration - Define all providers you want to use
+   providers:
+     openai:
+       api_key: ${OPENAI_API_KEY}
+     # Optional providers:
+     # anthropic:
+     #   api_key: ${ANTHROPIC_API_KEY}
+     # azure:
+     #   api_key: ${AZURE_OPENAI_API_KEY}
+     #   endpoint: ${AZURE_OPENAI_ENDPOINT}
+     #   api_version: ${AZURE_OPENAI_API_VERSION}
+     # databricks:
+     #   token: ${DATABRICKS_TOKEN}
+     #   host: ${DATABRICKS_HOST}
+
+   # Model Category Mapping - BOTH categories MUST be defined
+   model_categories:
+     big:  # Used for claude-3-sonnet models
+       provider: openai  # Which provider to use
+       deployment: gpt-4o  # Specific model/deployment name
+     
+     small:  # Used for claude-3-haiku models
+       provider: openai  # Which provider to use
+       deployment: gpt-4o-mini  # Specific model/deployment name
    ```
-   OPENAI_API_KEY=your-openai-key
-   # Optional: customize which models are used
-   # BIG_MODEL=gpt-4o
-   # SMALL_MODEL=gpt-4o-mini
+
+   **Required: Create `.env`** with any API keys referenced in `config.yaml`:
+   
+   ```
+   OPENAI_API_KEY=sk-your-openai-key
    ```
 
 4. **Start the proxy server**:
@@ -52,47 +83,102 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
    ANTHROPIC_BASE_URL=http://localhost:8082 claude
    ```
 
-3. **That's it!** Your Claude Code client will now use OpenAI models through the proxy. 🎯
+3. **That's it!** Your Claude Code client will now use your configured models through the proxy. 🎯
 
-## Model Mapping 🗺️
+## Model Mapping Rules 🗺️
 
-The proxy automatically maps Claude models to OpenAI models:
+The proxy follows strict rules with no fallbacks:
 
-| Claude Model | OpenAI Model |
-|--------------|--------------|
-| haiku | gpt-4o-mini (default) |
-| sonnet | gpt-4o (default) |
+1. **Category-based Mapping**: 
+   - `big` and `small` categories in `config.yaml` MUST be defined
+   - Claude Sonnet models → map to the "big" category
+   - Claude Haiku models → map to the "small" category
 
-### Customizing Model Mapping
+2. **Direct Model References**:
+   - Use categories directly: `model="big"` or `model="small"`
+   - Use explicit provider prefixes: `model="openai/gpt-4o"` or `model="azure/deployment-name"`
+   - No default fallbacks or silent provider selection
 
-You can customize which OpenAI models are used via environment variables:
+3. **Error Conditions**:
+   - Missing required categories results in clear errors
+   - Models without provider prefixes result in clear errors
+   - Environment variables missing from .env result in clear errors
 
-- `BIG_MODEL`: The OpenAI model to use for Claude Sonnet models (default: "gpt-4o")
-- `SMALL_MODEL`: The OpenAI model to use for Claude Haiku models (default: "gpt-4o-mini")
+## Advanced Configuration Options
 
-Add these to your `.env` file to customize:
+The configuration is based on two simple concepts:
+1. **Providers**: Where to get models from (OpenAI, Azure, etc.)
+2. **Model Categories**: How Claude models map to your chosen provider models
+
+### OpenAI Configuration (Default)
+
+The simplest setup uses OpenAI models:
+
+```yaml
+providers:
+  openai:
+    api_key: ${OPENAI_API_KEY}
+
+model_categories:
+  big:
+    provider: openai
+    deployment: gpt-4o
+  small:
+    provider: openai
+    deployment: gpt-4o-mini
 ```
-OPENAI_API_KEY=your-openai-key
-BIG_MODEL=gpt-4o
-SMALL_MODEL=gpt-4o-mini
+
+### Azure OpenAI Configuration
+
+To use Azure OpenAI Service:
+
+```yaml
+providers:
+  azure:
+    api_key: ${AZURE_OPENAI_API_KEY}
+    endpoint: ${AZURE_OPENAI_ENDPOINT}
+    api_version: ${AZURE_OPENAI_API_VERSION}
+
+model_categories:
+  big:
+    provider: azure
+    deployment: my-gpt4-deployment-name
+  small:
+    provider: azure
+    deployment: my-gpt35-deployment-name
 ```
 
-Or set them directly when running the server:
-```bash
-BIG_MODEL=gpt-4o SMALL_MODEL=gpt-4o-mini uv run uvicorn server:app --host 0.0.0.0 --port 8082
+### Databricks Configuration
+
+To use Databricks:
+
+```yaml
+providers:
+  databricks:
+    token: ${DATABRICKS_TOKEN}
+    host: ${DATABRICKS_HOST}
+
+model_categories:
+  big:
+    provider: databricks
+    deployment: databricks-claude-3-sonnet
+  small:
+    provider: databricks
+    deployment: databricks-claude-3-haiku
 ```
+
+You can also mix providers if needed, for example using OpenAI for one category and Databricks for another.
 
 ## How It Works 🧩
 
 This proxy works by:
 
-1. **Receiving requests** in Anthropic's API format 📥
-2. **Translating** the requests to OpenAI format via LiteLLM 🔄
-3. **Sending** the translated request to OpenAI 📤
-4. **Converting** the response back to Anthropic format 🔄
-5. **Returning** the formatted response to the client ✅
+1. **Loading configuration** with strict validation (no defaults)
+2. **Mapping model names** according to explicit rules in `config.yaml`
+3. **Routing requests** to the appropriate provider based on model prefix
+4. **Converting responses** back to Anthropic format
 
-The proxy handles both streaming and non-streaming responses, maintaining compatibility with all Claude clients. 🌊
+The proxy maintains compatibility with Claude Code while ensuring strict configuration control and no silent fallbacks.
 
 ## Contributing 🤝
 
