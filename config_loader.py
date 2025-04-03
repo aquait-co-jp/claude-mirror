@@ -57,7 +57,18 @@ def map_to_litellm_model(category: str) -> str:
     if category not in config["model_categories"]:
         raise ValueError(f"Unknown model category: {category}. Available categories: {list(config['model_categories'].keys())}")
     
-    return config["model_categories"][category]
+    # Get the category config
+    cat_config = config["model_categories"][category]
+    
+    # Format as provider/deployment string for LiteLLM
+    provider = cat_config.get("provider")
+    deployment = cat_config.get("deployment")
+    
+    if not provider or not deployment:
+        raise ValueError(f"Invalid model configuration for category '{category}'. 'provider' and 'deployment' are required.")
+    
+    # Return as provider/deployment format
+    return f"{provider}/{deployment}"
 
 def get_provider_params(model: str) -> Dict[str, Any]:
     """Get provider-specific parameters for a model"""
