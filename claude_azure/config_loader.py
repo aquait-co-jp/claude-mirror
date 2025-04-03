@@ -110,6 +110,8 @@ def get_provider_params(model: str) -> Dict[str, Any]:
     # Add provider-specific parameters
     if provider == "openai":
         params["api_key"] = provider_config["api_key"]
+        if "base_url" in provider_config:
+            params["api_base"] = provider_config["base_url"]
     elif provider == "anthropic":
         params["api_key"] = provider_config["api_key"]
     elif provider == "azure":

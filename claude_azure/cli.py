@@ -56,7 +56,9 @@ def display_config(config):
             if provider == "openai":
                 api_key = details.get("api_key", "")
                 masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "..."
+                base_url = details.get("base_url", "default (https://api.openai.com/v1)")
                 print(f"  • OpenAI: API Key: {masked_key}")
+                print(f"           Base URL: {base_url}")
             elif provider == "azure":
                 api_key = details.get("api_key", "")
                 masked_key = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "..."
@@ -95,11 +97,26 @@ def configure_provider(config, provider_name):
     
     if provider_name == "openai":
         print("\n=== OpenAI Configuration ===\n")
-        api_key = input("Enter your OpenAI API key: ")
+        print("Configure OpenAI or any OpenAI-compatible API (like LocalAI, LM Studio, etc.)")
+        
+        api_key = input("Enter API key: ")
         while not api_key.strip():
             print("API key cannot be empty.")
-            api_key = input("Enter your OpenAI API key: ")
-        config["providers"]["openai"] = {"api_key": api_key}
+            api_key = input("Enter API key: ")
+        
+        # Ask for custom base URL
+        print("\nOpenAI Base URL (leave empty for default https://api.openai.com/v1):")
+        print("For alternative OpenAI-compatible APIs, enter their base URL")
+        base_url = input("Base URL: ").strip()
+        
+        # Build config object
+        openai_config = {"api_key": api_key}
+        
+        # Add base_url only if provided
+        if base_url:
+            openai_config["base_url"] = base_url
+            
+        config["providers"]["openai"] = openai_config
         print("OpenAI configuration updated.")
         
     elif provider_name == "azure":

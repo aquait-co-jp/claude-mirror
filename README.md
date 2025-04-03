@@ -152,11 +152,30 @@ The simplest setup uses OpenAI models:
 providers:
   openai:
     api_key: your_openai_api_key_here
+    # Optional: base_url for alternative OpenAI-compatible APIs
+    # base_url: http://localhost:8000/v1
 
 model_categories:
   large: openai/gpt-4o
   small: openai/gpt-4o-mini
 ```
+
+### Alternative OpenAI-Compatible APIs
+
+You can use other OpenAI-compatible APIs by configuring a custom base URL:
+
+```yaml
+providers:
+  openai:
+    api_key: your_api_key_here
+    base_url: http://localhost:8000/v1  # Example for LocalAI
+
+model_categories:
+  large: openai/local-model-name
+  small: openai/smaller-local-model
+```
+
+This works with services like LocalAI, LM Studio, or any other API that implements the OpenAI interface.
 
 ### Azure OpenAI Configuration
 
