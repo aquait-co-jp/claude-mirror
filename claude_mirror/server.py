@@ -259,10 +259,13 @@ def get_provider_params(model):
             "api_version": PROVIDERS["azure"]["api_version"]
         }
     elif model.startswith("databricks/"):
+        host = PROVIDERS["databricks"]["host"]
+        if not host.startswith(("http://", "https://")):
+            # Default to https if no protocol is specified
+            host = f"https://{host}"
         return {
-            "databricks_token": PROVIDERS["databricks"]["token"],
-            "databricks_host": PROVIDERS["databricks"]["host"],
-            "databricks_path": model.split("/")[-1]
+            "api_key": PROVIDERS["databricks"]["token"],
+            "api_base": f"{host}/serving-endpoints"
         }
     return {}
 
