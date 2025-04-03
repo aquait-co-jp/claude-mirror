@@ -1,27 +1,30 @@
 # Basic configuration - Copy to config.yaml
 providers:
+  # Standard OpenAI configuration
   openai:
     api_key: your_openai_api_key_here
   
-  # Databricks configuration - direct values, no environment variables
-  databricks:
-    token: your_databricks_token_here
-    host: https://your-databricks-instance.cloud.databricks.com
-
-model_categories:
-  big:
-    provider: openai
-    deployment: gpt-4o
+  # Azure OpenAI configuration
+  # azure:
+  #   api_key: your_azure_api_key_here
+  #   endpoint: your-instance.openai.azure.com
+  #   api_version: 2023-05-15
   
-  small:
-    provider: openai
-    deployment: gpt-4o-mini
-    
-  # Example Databricks model mappings
-  databricks-big:
-    provider: databricks
-    deployment: claude-3-sonnet
-    
-  databricks-small:
-    provider: databricks
-    deployment: claude-3-haiku
+  # Databricks configuration
+  # databricks:
+  #   token: your_databricks_token_here
+  #   host: adb-12345678901234.12.azuredatabricks.net
+
+# Direct mapping from model categories to provider-specific models
+model_categories:
+  # Standard OpenAI mapping
+  large: openai/gpt-4o
+  small: openai/gpt-4o-mini
+  
+  # Example Azure mapping
+  # large: azure/gpt4-deployment
+  # small: azure/gpt35-deployment
+  
+  # Example Databricks mapping
+  # large: databricks/databricks-claude-3-sonnet
+  # small: databricks/databricks-claude-3-haiku

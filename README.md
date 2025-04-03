@@ -34,30 +34,28 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
    **Required: Create `config.yaml`**:
    
    ```yaml
-   # Model Provider Configuration - Define all providers you want to use
+   # Provider configuration
    providers:
+     # OpenAI configuration
      openai:
        api_key: your_openai_api_key_here
-     # Optional providers:
-     # anthropic:
-     #   api_key: your_anthropic_api_key_here
+     
+     # Optional: Azure OpenAI configuration
      # azure:
      #   api_key: your_azure_api_key_here
-     #   endpoint: https://your-endpoint.openai.azure.com
+     #   endpoint: your-instance.openai.azure.com
      #   api_version: 2023-05-15
+     
+     # Optional: Databricks configuration
      # databricks:
      #   token: your_databricks_token_here
-     #   host: https://your-databricks-instance.cloud.databricks.com
+     #   host: adb-12345678901234.12.azuredatabricks.net
 
-   # Model Category Mapping - BOTH categories MUST be defined
+   # Direct mapping from model categories to provider-specific models
    model_categories:
-     big:  # Used for claude-3-sonnet models
-       provider: openai  # Which provider to use
-       deployment: gpt-4o  # Specific model/deployment name
-     
-     small:  # Used for claude-3-haiku models
-       provider: openai  # Which provider to use
-       deployment: gpt-4o-mini  # Specific model/deployment name
+     # Claude models will map to these categories
+     large: openai/gpt-4o          # Claude-3-Sonnet maps to this
+     small: openai/gpt-4o-mini     # Claude-3-Haiku maps to this
    ```
 
 4. **Start the proxy server**:
@@ -84,18 +82,18 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
 The proxy follows strict rules with no fallbacks:
 
 1. **Category-based Mapping**: 
-   - `big` and `small` categories in `config.yaml` MUST be defined
-   - Claude Sonnet models → map to the "big" category
+   - `large` and `small` categories in `config.yaml` MUST be defined
+   - Claude Sonnet models → map to the "large" category
    - Claude Haiku models → map to the "small" category
 
 2. **Direct Model References**:
-   - Use categories directly: `model="big"` or `model="small"`
-   - Use explicit provider prefixes: `model="openai/gpt-4o"` or `model="azure/deployment-name"`
+   - Each category maps directly to a provider/model in the format: `provider/model-name`
+   - For example: `large: openai/gpt-4o` means Claude-3-Sonnet requests will use OpenAI's GPT-4o
    - No default fallbacks or silent provider selection
 
 3. **Error Conditions**:
    - Missing required categories results in clear errors
-   - Models without provider prefixes result in clear errors
+   - Invalid model format results in clear errors
    - Missing configuration values in config.yaml result in clear errors
 
 ## Advanced Configuration Options
@@ -114,12 +112,8 @@ providers:
     api_key: your_openai_api_key_here
 
 model_categories:
-  big:
-    provider: openai
-    deployment: gpt-4o
-  small:
-    provider: openai
-    deployment: gpt-4o-mini
+  large: openai/gpt-4o
+  small: openai/gpt-4o-mini
 ```
 
 ### Azure OpenAI Configuration
@@ -130,16 +124,12 @@ To use Azure OpenAI Service:
 providers:
   azure:
     api_key: your_azure_api_key_here
-    endpoint: https://your-endpoint.openai.azure.com
+    endpoint: your-instance.openai.azure.com
     api_version: 2023-05-15
 
 model_categories:
-  big:
-    provider: azure
-    deployment: my-gpt4-deployment-name
-  small:
-    provider: azure
-    deployment: my-gpt35-deployment-name
+  large: azure/my-gpt4-deployment-name
+  small: azure/my-gpt35-deployment-name
 ```
 
 ### Databricks Configuration
@@ -150,15 +140,11 @@ To use Databricks:
 providers:
   databricks:
     token: your_databricks_token_here
-    host: https://your-databricks-instance.cloud.databricks.com
+    host: adb-12345678901234.12.azuredatabricks.net
 
 model_categories:
-  big:
-    provider: databricks
-    deployment: databricks-claude-3-sonnet
-  small:
-    provider: databricks
-    deployment: databricks-claude-3-haiku
+  large: databricks/databricks-claude-3-sonnet
+  small: databricks/databricks-claude-3-haiku
 ```
 
 You can also mix providers if needed, for example using OpenAI for one category and Databricks for another.

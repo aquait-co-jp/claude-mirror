@@ -27,12 +27,18 @@ def load_config() -> Dict:
 config = load_config()
 
 def get_model_config(category: str):
-    """Get model configuration for a given category (big, small)"""
+    """Get model configuration for a given category (large, small)"""
     if category not in config["model_categories"]:
         raise ValueError(f"Unknown model category: {category}. Available categories: {list(config['model_categories'].keys())}")
     
-    model_config = config["model_categories"][category]
-    provider = model_config["provider"]
+    # Get the provider/model string from the category mapping
+    model_string = config["model_categories"][category]
+    
+    # Split into provider and deployment
+    if "/" not in model_string:
+        raise ValueError(f"Invalid model format for category '{category}': {model_string}. Expected format: 'provider/model'")
+    
+    provider, deployment = model_string.split("/", 1)
     
     if provider not in config["providers"]:
         raise ValueError(f"Provider '{provider}' not configured")
@@ -41,26 +47,17 @@ def get_model_config(category: str):
     
     return {
         "provider": provider,
-        "deployment": model_config["deployment"],
+        "deployment": deployment,
         "config": provider_config
     }
 
 def map_to_litellm_model(category: str) -> str:
     """Map a model category to a LiteLLM formatted model string"""
-    model_config = get_model_config(category)
-    provider = model_config["provider"]
-    deployment = model_config["deployment"]
+    # For our simplified direct mapping, just return the configured value
+    if category not in config["model_categories"]:
+        raise ValueError(f"Unknown model category: {category}. Available categories: {list(config['model_categories'].keys())}")
     
-    if provider == "openai":
-        return f"openai/{deployment}"
-    elif provider == "anthropic":
-        return f"anthropic/{deployment}"
-    elif provider == "azure":
-        return f"azure/{deployment}"
-    elif provider == "databricks":
-        return f"databricks/{deployment}"
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    return config["model_categories"][category]
 
 def get_provider_params(model: str) -> Dict[str, Any]:
     """Get provider-specific parameters for a model"""
