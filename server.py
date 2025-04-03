@@ -10,13 +10,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 import litellm
 import uuid
 import time
-from dotenv import load_dotenv
+# Removed dotenv import - no longer using environment variables
 import re
 from datetime import datetime
 import sys
 
-# Load environment variables from .env file
-load_dotenv()
+# Removed .env loading completely - using only config.yaml
 
 # Configure logging with more verbose output
 logging.basicConfig(

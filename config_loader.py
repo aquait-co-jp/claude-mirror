@@ -6,38 +6,18 @@ from typing import Dict, Optional, Any, List, Union, Literal
 
 # Skip Pydantic models for now to simplify configuration
 
-def load_env_variables(config_str: str) -> str:
-    """
-    Replace ${ENV_VAR} or $ENV_VAR patterns with their values from environment variables.
-    If the environment variable is not set, load it from .env first
-    """
-    # Load .env explicitly to make sure we get these variables
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    pattern = r'\${([^}]+)}|\$([a-zA-Z0-9_]+)'
-    
-    def replace_var(match):
-        # Extract variable name from either ${VAR} or $VAR format
-        var_name = match.group(1) if match.group(1) else match.group(2)
-        if var_name not in os.environ:
-            raise ValueError(f"Required environment variable '{var_name}' is not set. Please set it in your .env file.")
-        return os.environ[var_name]
-    
-    return re.sub(pattern, replace_var, config_str)
+# Removed environment variable handling completely - no backward compatibility
 
 def load_config() -> Dict:
-    """Load configuration from config.yaml and environment variables"""
+    """Load configuration directly from config.yaml"""
     config_path = os.path.join(os.path.dirname(__file__), 'config.yaml')
     
     try:
         with open(config_path, 'r') as f:
             config_str = f.read()
         
-        # Replace environment variables in the config file
-        config_str = load_env_variables(config_str)
-        
         # Parse YAML and return the dict directly
+        # No longer processing environment variables
         return yaml.safe_load(config_str)
     except Exception as e:
         print(f"Error loading config: {str(e)}")

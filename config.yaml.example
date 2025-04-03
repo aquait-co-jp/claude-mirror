@@ -1,7 +1,12 @@
 # Basic configuration - Copy to config.yaml
 providers:
   openai:
-    api_key: ${OPENAI_API_KEY}
+    api_key: your_openai_api_key_here
+  
+  # Databricks configuration - direct values, no environment variables
+  databricks:
+    token: your_databricks_token_here
+    host: https://your-databricks-instance.cloud.databricks.com
 
 model_categories:
   big:
@@ -11,3 +16,12 @@ model_categories:
   small:
     provider: openai
     deployment: gpt-4o-mini
+    
+  # Example Databricks model mappings
+  databricks-big:
+    provider: databricks
+    deployment: claude-3-sonnet
+    
+  databricks-small:
+    provider: databricks
+    deployment: claude-3-haiku

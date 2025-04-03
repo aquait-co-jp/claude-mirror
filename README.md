@@ -27,9 +27,9 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
     curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
-3. **Configure `config.yaml` and `.env`**:
+3. **Configure `config.yaml`**:
 
-   Strict configuration is required with no default fallbacks. The system uses YAML configuration with clear model mapping.
+   Strict configuration is required with no default fallbacks. The system uses a single YAML configuration file with direct values.
 
    **Required: Create `config.yaml`**:
    
@@ -37,17 +37,17 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
    # Model Provider Configuration - Define all providers you want to use
    providers:
      openai:
-       api_key: ${OPENAI_API_KEY}
+       api_key: your_openai_api_key_here
      # Optional providers:
      # anthropic:
-     #   api_key: ${ANTHROPIC_API_KEY}
+     #   api_key: your_anthropic_api_key_here
      # azure:
-     #   api_key: ${AZURE_OPENAI_API_KEY}
-     #   endpoint: ${AZURE_OPENAI_ENDPOINT}
-     #   api_version: ${AZURE_OPENAI_API_VERSION}
+     #   api_key: your_azure_api_key_here
+     #   endpoint: https://your-endpoint.openai.azure.com
+     #   api_version: 2023-05-15
      # databricks:
-     #   token: ${DATABRICKS_TOKEN}
-     #   host: ${DATABRICKS_HOST}
+     #   token: your_databricks_token_here
+     #   host: https://your-databricks-instance.cloud.databricks.com
 
    # Model Category Mapping - BOTH categories MUST be defined
    model_categories:
@@ -58,12 +58,6 @@ A proxy server that lets you use Claude Code with OpenAI models like GPT-4o / gp
      small:  # Used for claude-3-haiku models
        provider: openai  # Which provider to use
        deployment: gpt-4o-mini  # Specific model/deployment name
-   ```
-
-   **Required: Create `.env`** with any API keys referenced in `config.yaml`:
-   
-   ```
-   OPENAI_API_KEY=sk-your-openai-key
    ```
 
 4. **Start the proxy server**:
@@ -102,7 +96,7 @@ The proxy follows strict rules with no fallbacks:
 3. **Error Conditions**:
    - Missing required categories results in clear errors
    - Models without provider prefixes result in clear errors
-   - Environment variables missing from .env result in clear errors
+   - Missing configuration values in config.yaml result in clear errors
 
 ## Advanced Configuration Options
 
@@ -117,7 +111,7 @@ The simplest setup uses OpenAI models:
 ```yaml
 providers:
   openai:
-    api_key: ${OPENAI_API_KEY}
+    api_key: your_openai_api_key_here
 
 model_categories:
   big:
@@ -135,9 +129,9 @@ To use Azure OpenAI Service:
 ```yaml
 providers:
   azure:
-    api_key: ${AZURE_OPENAI_API_KEY}
-    endpoint: ${AZURE_OPENAI_ENDPOINT}
-    api_version: ${AZURE_OPENAI_API_VERSION}
+    api_key: your_azure_api_key_here
+    endpoint: https://your-endpoint.openai.azure.com
+    api_version: 2023-05-15
 
 model_categories:
   big:
@@ -155,8 +149,8 @@ To use Databricks:
 ```yaml
 providers:
   databricks:
-    token: ${DATABRICKS_TOKEN}
-    host: ${DATABRICKS_HOST}
+    token: your_databricks_token_here
+    host: https://your-databricks-instance.cloud.databricks.com
 
 model_categories:
   big:
@@ -173,12 +167,12 @@ You can also mix providers if needed, for example using OpenAI for one category 
 
 This proxy works by:
 
-1. **Loading configuration** with strict validation (no defaults)
-2. **Mapping model names** according to explicit rules in `config.yaml`
+1. **Loading configuration** directly from `config.yaml` with strict validation (no defaults)
+2. **Mapping model names** according to explicit rules in the configuration
 3. **Routing requests** to the appropriate provider based on model prefix
 4. **Converting responses** back to Anthropic format
 
-The proxy maintains compatibility with Claude Code while ensuring strict configuration control and no silent fallbacks.
+The proxy maintains compatibility with Claude Code while ensuring strict configuration control using a single configuration file with no environment variables.
 
 ## Contributing 🤝
 
