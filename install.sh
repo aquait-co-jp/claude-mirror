@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Simple install script for claude-azure
+# Simple install script for claude-mirror
 
-echo "Installing claude-azure..."
+echo "Installing claude-mirror..."
 
 # Remove previous build artifacts
 rm -rf dist/ build/ *.egg-info/
@@ -15,10 +15,10 @@ if command -v uv &> /dev/null; then
     echo "✅ Package installed with uv."
     echo ""
     echo "To configure your setup, run:"
-    echo "  claude-azure --setup"
+    echo "  claude-mirror --setup"
     echo ""
     echo "After setup, you can run:"
-    echo "  claude-azure"
+    echo "  claude-mirror"
 else
     # Fallback to pip if uv is not available
     echo "Note: uv not found, using pip instead"
@@ -27,8 +27,8 @@ else
     echo "✅ Package installed with pip."
     echo ""
     echo "To configure your setup, run:"
-    echo "  claude-azure --setup"
+    echo "  claude-mirror --setup"
     echo ""
     echo "After setup, you can run:"
-    echo "  claude-azure"
+    echo "  claude-mirror"
 fi

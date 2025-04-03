@@ -1,8 +1,8 @@
-# Claude Azure 🧙‍♂️🔄
+# Claude Mirror 🪞✨
 
 **Use Claude Code with OpenAI, Azure, Databricks and More** 🤝
 
-A proxy server that lets you use Claude Code with OpenAI models like GPT-4o, Azure OpenAI deployments, or Databricks endpoints. 🌉
+A proxy server that mirrors Claude Code's interface to OpenAI models, Azure OpenAI deployments, and other compatible providers. 🌉
 
 ## Installation
 
@@ -10,8 +10,8 @@ Clone the repository and install locally:
 
 ```bash
 # Clone the repository
-git clone https://github.com/ericmichael/claude-azure.git
-cd claude-azure
+git clone https://github.com/ericmichael/claude-mirror.git
+cd claude-mirror
 
 # Run the install script
 ./install.sh
@@ -26,13 +26,13 @@ pip install -e .
 Once installed, run the interactive setup:
 
 ```bash
-claude-azure --setup
+claude-mirror --setup
 ```
 
 This will guide you through creating a configuration file with your API keys and model mappings. After setup, run:
 
 ```bash
-claude-azure
+claude-mirror
 ```
 
 ## Quick Start ⚡
@@ -46,15 +46,15 @@ claude-azure
 
 1. **Install the package**:
    ```bash
-   pip install claude-azure
+   pip install claude-mirror
    ```
 
 2. **Run the interactive setup**:
    ```bash
-   claude-azure --setup
+   claude-mirror --setup
    ```
 
-   This will guide you through creating a configuration file at `~/.claude-azure/config.yaml`.
+   This will guide you through creating a configuration file at `~/.claude-mirror/config.yaml`.
    
    Alternatively, you can manually create a configuration file:
    
@@ -83,25 +83,25 @@ claude-azure
      small: openai/gpt-4o-mini     # Claude-3-Haiku maps to this
    ```
 
-3. **Run Claude Azure**:
+3. **Run Claude Mirror**:
    ```bash
-   claude-azure
+   claude-mirror
    ```
 
 ### Command-line Options
 
 ```bash
 # Normal usage (no arguments needed)
-claude-azure
+claude-mirror
 
 # Interactive setup to create/update config
-claude-azure --setup
+claude-mirror --setup
 
 # Debug mode with detailed logs
-claude-azure --debug  
+claude-mirror --debug  
 
 # Use a specific config file
-claude-azure --config /path/to/my/config.yaml
+claude-mirror --config /path/to/my/config.yaml
 ```
 
 ### Using with Claude Code 🎮
@@ -111,7 +111,7 @@ claude-azure --config /path/to/my/config.yaml
    npm install -g @anthropic-ai/claude-code
    ```
 
-2. **The claude-azure command handles everything**:
+2. **The claude-mirror command handles everything**:
    - Starts the proxy server
    - Configures the environment
    - Launches Claude Code connected to the proxy

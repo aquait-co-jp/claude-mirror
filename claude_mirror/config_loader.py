@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field
 from typing import Dict, Optional, Any, List, Union, Literal
 
 def load_config() -> Dict:
-    """Load configuration from config.yaml or the path specified in CLAUDE_AZURE_CONFIG env var"""
+    """Load configuration from config.yaml or the path specified in CLAUDE_MIRROR_CONFIG env var"""
     # Check for config path in environment variable
-    config_path = os.environ.get("CLAUDE_AZURE_CONFIG")
+    config_path = os.environ.get("CLAUDE_MIRROR_CONFIG")
     
     # If no env var, look in default locations
     if not config_path:
@@ -16,14 +16,14 @@ def load_config() -> Dict:
             config_path = "config.yaml"
         # Finally try user's home directory
         else:
-            home_config = os.path.join(os.path.expanduser("~"), ".claude-azure", "config.yaml")
+            home_config = os.path.join(os.path.expanduser("~"), ".claude-mirror", "config.yaml")
             if os.path.isfile(home_config):
                 config_path = home_config
     
     if not config_path or not os.path.isfile(config_path):
         raise FileNotFoundError(
-            "Config file not found. Please run 'claude-azure --setup' to create a configuration file, "
-            "or specify a config file with 'claude-azure --config /path/to/config.yaml'."
+            "Config file not found. Please run 'claude-mirror --setup' to create a configuration file, "
+            "or specify a config file with 'claude-mirror --config /path/to/config.yaml'."
         )
         
     try:

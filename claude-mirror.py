@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Wrapper for Claude Code with OpenAI Proxy
+Wrapper for Claude Code with Claude Mirror
 
 This script starts the proxy server and then launches the Claude Code CLI.
 When Claude exits, the proxy server is automatically terminated.
 
 Usage:
-  python claude-proxy.py         # Normal mode (minimal output)
-  python claude-proxy.py --debug # Debug mode (verbose logs)
+  python claude-mirror.py         # Normal mode (minimal output)
+  python claude-mirror.py --debug # Debug mode (verbose logs)
 """
 
 import os

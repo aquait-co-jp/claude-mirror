@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Command-line entry point for Claude Azure
+Command-line entry point for Claude Mirror
 
-This module provides the main entry point for the claude-azure command.
+This module provides the main entry point for the claude-mirror command.
 It starts the proxy server and then launches the Claude Code CLI.
 When Claude exits, the proxy server is automatically terminated.
 
 Usage:
-  claude-azure         # Normal mode (minimal output)
-  claude-azure --debug # Debug mode (verbose logs)
+  claude-mirror         # Normal mode (minimal output)
+  claude-mirror --debug # Debug mode (verbose logs)
 """
 
 import os
@@ -26,7 +26,7 @@ from pathlib import Path
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Connect Claude Code to Azure OpenAI and other OpenAI-compatible providers"
+        description="Connect Claude Code to OpenAI, Azure OpenAI, and other compatible providers"
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode with verbose logging")
     parser.add_argument("--config", type=str, help="Path to config.yaml file", 
@@ -264,9 +264,9 @@ def remove_provider(config, provider_name):
 
 def interactive_setup():
     """Run interactive setup to create or modify config file."""
-    print("\n=== Claude Azure Setup ===\n")
-    print("This utility will help you configure Claude Azure.")
-    print("The configuration file will be created in ~/.claude-azure/config.yaml")
+    print("\n=== Claude Mirror Setup ===\n")
+    print("This utility will help you configure Claude Mirror.")
+    print("The configuration file will be created in ~/.claude-mirror/config.yaml")
     
     print("\nAbout Model Categories:")
     print("Claude Code uses two categories of models:")
@@ -275,7 +275,7 @@ def interactive_setup():
     print("\nYou'll need to configure which provider and model to use for each category.")
     
     # Create config directory if it doesn't exist
-    config_dir = os.path.expanduser("~/.claude-azure")
+    config_dir = os.path.expanduser("~/.claude-mirror")
     os.makedirs(config_dir, exist_ok=True)
     config_path = os.path.join(config_dir, "config.yaml")
     
@@ -408,7 +408,7 @@ def start_proxy_server(debug_mode, config_path=None):
         if not os.path.isfile(config_path):
             print(f"Error: Config file not found at {config_path}")
             sys.exit(1)
-        env["CLAUDE_AZURE_CONFIG"] = config_path
+        env["CLAUDE_MIRROR_CONFIG"] = config_path
     
     # Start the proxy server with appropriate output redirection
     proxy_process = subprocess.Popen(
@@ -462,7 +462,7 @@ def run_claude():
     return claude_process.returncode
 
 def main():
-    """Main entry point for the claude-azure command."""
+    """Main entry point for the claude-mirror command."""
     # Parse command line arguments
     args = parse_arguments()
     
@@ -476,7 +476,7 @@ def main():
         if not config_path:
             print("Setup failed or was canceled. Exiting.")
             sys.exit(1)
-        print("\nSetup complete. You can now run 'claude-azure' to start using it.")
+        print("\nSetup complete. You can now run 'claude-mirror' to start using it.")
         sys.exit(0)
     
     # Check if Claude is installed
@@ -489,18 +489,18 @@ def main():
     config_path = args.config
     if not config_path:
         # Check if config exists in user directory
-        user_config = os.path.expanduser("~/.claude-azure/config.yaml")
+        user_config = os.path.expanduser("~/.claude-mirror/config.yaml")
         if os.path.isfile(user_config):
             config_path = user_config
     
     # If still no config file, suggest running setup
     if not config_path or not os.path.isfile(config_path):
         print("Error: No configuration file found.")
-        print("Please run 'claude-azure --setup' to create a configuration file.")
+        print("Please run 'claude-mirror --setup' to create a configuration file.")
         sys.exit(1)
     
     # Set config path in environment variable
-    os.environ["CLAUDE_AZURE_CONFIG"] = config_path
+    os.environ["CLAUDE_MIRROR_CONFIG"] = config_path
     
     # Start the proxy server
     proxy_process = start_proxy_server(args.debug, config_path)

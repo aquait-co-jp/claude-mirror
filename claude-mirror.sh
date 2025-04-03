@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# claude-proxy.sh - Start Claude Code with the OpenAI proxy
+# claude-mirror.sh - Start Claude Code with Claude Mirror
 # 
 # This script starts the proxy server in the background and then runs Claude.
 # When Claude exits, it automatically terminates the proxy server.
 #
 # Usage:
-#   ./claude-proxy.sh         # Normal mode
-#   ./claude-proxy.sh --debug # Debug mode (verbose logs)
+#   ./claude-mirror.sh         # Normal mode
+#   ./claude-mirror.sh --debug # Debug mode (verbose logs)
 
 # Check for debug mode
 DEBUG_MODE=0
