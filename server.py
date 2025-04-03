@@ -3,7 +3,7 @@ import uvicorn
 import logging
 import json
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Dict, Any, Optional, Union, Literal
+from typing import List, Dict, Any, Optional, Union, Literal, Type, TypeVar
 import httpx
 import os
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -83,8 +83,6 @@ for handler in logger.handlers:
 # Always use OpenAI models
 USE_OPENAI_MODELS = True
 
-app = FastAPI()
-
 # Add explicit startup message
 print("\n======= STARTING SERVER: Environment Check =======")
 sys.stdout.flush()
@@ -101,6 +99,12 @@ has_openai = OPENAI_API_KEY is not None
 has_azure = AZURE_OPENAI_API_KEY is not None and AZURE_OPENAI_ENDPOINT is not None
 has_databricks = DATABRICKS_TOKEN is not None and DATABRICKS_HOST is not None
 
+# Anthropic key only required if not using OpenAI models
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+if not ANTHROPIC_API_KEY and not USE_OPENAI_MODELS:
+    print("ERROR: ANTHROPIC_API_KEY environment variable is required when USE_OPENAI_MODELS=False!")
+    sys.exit(1)
+
 # Log which configurations are present
 print("Available provider configurations:")
 print(f"  - OpenAI API: {'CONFIGURED' if has_openai else 'NOT CONFIGURED'}")
@@ -114,12 +118,7 @@ print(f"  - Anthropic API: {'CONFIGURED' if ANTHROPIC_API_KEY else 'NOT CONFIGUR
 if has_openai:
     print(f"✅ OPENAI_API_KEY found: {OPENAI_API_KEY[:5]}...")
 
-# Anthropic key only required if not using OpenAI models
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-if not ANTHROPIC_API_KEY and not USE_OPENAI_MODELS:
-    print("ERROR: ANTHROPIC_API_KEY environment variable is required when USE_OPENAI_MODELS=False!")
-    sys.exit(1)
-elif ANTHROPIC_API_KEY:
+if ANTHROPIC_API_KEY:
     print(f"✅ ANTHROPIC_API_KEY found: {ANTHROPIC_API_KEY[:5]}...")
 else:
     print("ℹ️ ANTHROPIC_API_KEY not set, but not required since USE_OPENAI_MODELS=True")
@@ -183,11 +182,142 @@ if has_databricks:
         sys.exit(1)
     AZURE_DEPLOYMENTS["claude-3-haiku-20240307"] = AZURE_CLAUDE_HAIKU_DEPLOYMENT
 
-def get_azure_deployment(model_name):
-    """Get Azure deployment name for a given model"""
-    if model_name not in AZURE_DEPLOYMENTS:
-        raise ValueError(f"No Azure deployment configured for model: {model_name}")
-    return AZURE_DEPLOYMENTS[model_name]
+class ModelHelper:
+    """Helper class for model handling operations to reduce code duplication."""
+    
+    @staticmethod
+    def get_azure_deployment(model_name):
+        """Get Azure deployment name for a given model"""
+        if model_name not in AZURE_DEPLOYMENTS:
+            raise ValueError(f"No Azure deployment configured for model: {model_name}")
+        return AZURE_DEPLOYMENTS[model_name]
+    
+    @staticmethod
+    def get_clean_model_name(model):
+        """Extract the base model name without provider prefix."""
+        if model.startswith("anthropic/"):
+            return model[len("anthropic/"):]
+        elif model.startswith("openai/"):
+            return model[len("openai/"):]
+        elif model.startswith("azure/"):
+            return model[len("azure/"):]
+        elif model.startswith("databricks/"):
+            return model[len("databricks/"):]
+        return model
+    
+    @staticmethod
+    def get_display_model_name(model):
+        """Get a clean model name for display purposes."""
+        if "/" in model:
+            return model.split("/")[-1]
+        return model
+    
+    @staticmethod
+    def determine_provider(model):
+        """Determine the provider based on model prefix."""
+        if model.startswith("openai/"):
+            return "openai"
+        elif model.startswith("anthropic/"):
+            return "anthropic"
+        elif model.startswith("azure/"):
+            return "azure"
+        elif model.startswith("databricks/"):
+            return "databricks"
+        # Default model provider detection
+        if "haiku" in model.lower() or "sonnet" in model.lower() or "claude" in model.lower():
+            return "anthropic"
+        return "unknown"
+    
+    @staticmethod
+    def map_model_for_openai(original_model):
+        """Map Anthropic models to OpenAI equivalents when USE_OPENAI_MODELS is True."""
+        # Remove anthropic/ prefix if it exists
+        mapped_model = original_model
+        if mapped_model.startswith('anthropic/'):
+            mapped_model = mapped_model[10:]
+            
+        # Azure OpenAI - handle Azure deployments
+        if mapped_model.startswith('azure/'):
+            # Keep as is, already specifies azure deployment
+            logger.debug(f"📌 MODEL MAPPING: {original_model} (Azure deployment)")
+            return mapped_model
+            
+        # Handle Azure Databricks Claude models
+        elif mapped_model.startswith('databricks-claude'):
+            # Already in correct format for Databricks
+            new_model = f"databricks/{mapped_model}"
+            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model} (Databricks Claude)")
+            return new_model
+            
+        # Special case for direct Databricks model references in client code
+        elif 'databricks-claude' in mapped_model.lower():
+            # Already in correct format for Databricks
+            new_model = f"databricks/{mapped_model}"
+            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model} (Databricks Claude)")
+            return new_model
+            
+        # Swap Haiku with small model (default: gpt-4o-mini)
+        elif 'haiku' in mapped_model.lower():
+            # Use OpenAI mapping for Haiku models
+            new_model = f"openai/{SMALL_MODEL}"
+            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
+            return new_model
+        
+        # Swap any Sonnet model with big model (default: gpt-4o)
+        elif 'sonnet' in mapped_model.lower():
+            # Use OpenAI mapping for Sonnet models
+            new_model = f"openai/{BIG_MODEL}"
+            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
+            return new_model
+        
+        # Keep the model as is but add openai prefix if not already present
+        elif not any(mapped_model.startswith(prefix) for prefix in ['openai/', 'azure/', 'databricks/']):
+            new_model = f"openai/{mapped_model}"
+            logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
+            return new_model
+        
+        return mapped_model
+    
+    @staticmethod
+    def configure_provider_parameters(model, litellm_request):
+        """Configure provider-specific parameters based on the model."""
+        if model.startswith("openai/"):
+            if not has_openai:
+                raise HTTPException(status_code=400, detail="OpenAI API key required but not configured")
+            litellm_request["api_key"] = OPENAI_API_KEY
+            logger.debug(f"Using OpenAI API key for model: {model}")
+        elif model.startswith("anthropic/"):
+            if not ANTHROPIC_API_KEY:
+                raise HTTPException(status_code=400, detail="Anthropic API key required but not configured")
+            litellm_request["api_key"] = ANTHROPIC_API_KEY
+            logger.debug(f"Using Anthropic API key for model: {model}")
+        elif model.startswith("azure/"):
+            if not has_azure:
+                raise HTTPException(status_code=400, detail="Azure OpenAI configuration required but not configured")
+            litellm_request["api_key"] = AZURE_OPENAI_API_KEY
+            litellm_request["api_base"] = AZURE_OPENAI_ENDPOINT
+            litellm_request["api_version"] = AZURE_OPENAI_API_VERSION
+            # Extract the deployment name from azure/deployment_name
+            deployment_name = model[6:]
+            litellm_request["model"] = f"azure/{deployment_name}"
+            logger.debug(f"Using Azure OpenAI configuration for deployment: {deployment_name}")
+        elif model.startswith("databricks/"):
+            if not has_databricks:
+                raise HTTPException(status_code=400, detail="Databricks configuration required but not configured")
+            # Extract the Databricks model name
+            databricks_model = model[11:]
+            # Set up Databricks-specific configuration
+            litellm_request["api_key"] = DATABRICKS_TOKEN
+            litellm_request["api_base"] = f"{DATABRICKS_HOST}/serving-endpoints/{databricks_model}"
+            litellm_request["model"] = "databricks"
+            logger.debug(f"Using Databricks configuration for model: {databricks_model}")
+        else:
+            # Unknown model prefix, require explicit provider specification
+            raise HTTPException(status_code=400, 
+                detail="Unrecognized model prefix. Please specify model with explicit provider prefix: 'openai/', 'anthropic/', 'azure/', or 'databricks/'.")
+        return litellm_request
+
+app = FastAPI()
 
 # Models for Anthropic API requests
 class ContentBlockText(BaseModel):
@@ -225,72 +355,24 @@ class Tool(BaseModel):
 class ThinkingConfig(BaseModel):
     enabled: bool
 
-class MessagesRequest(BaseModel):
+# Create a TypeVar for generic model type
+T = TypeVar('T', bound=BaseModel)
+
+# Base model class for common validation logic
+class ModelRequestBase(BaseModel):
     model: str
-    max_tokens: int
-    messages: List[Message]
-    system: Optional[Union[str, List[SystemContent]]] = None
-    stop_sequences: Optional[List[str]] = None
-    stream: Optional[bool] = False
-    temperature: Optional[float] = 1.0
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None
-    metadata: Optional[Dict[str, Any]] = None
-    tools: Optional[List[Tool]] = None
-    tool_choice: Optional[Dict[str, Any]] = None
-    thinking: Optional[ThinkingConfig] = None
     original_model: Optional[str] = None  # Will store the original model name
     
     @field_validator('model')
     def validate_model(cls, v, info):
+        """Shared model validation logic for all request types"""
         # Store the original model name
         original_model = v
         
         # Check if we're using OpenAI models and need to swap
         if USE_OPENAI_MODELS:
-            # Remove anthropic/ prefix if it exists
-            if v.startswith('anthropic/'):
-                v = v[10:]  # Remove 'anthropic/' prefix
-            
-            # Azure OpenAI - handle Azure deployments
-            if v.startswith('azure/'):
-                # Keep as is, already specifies azure deployment
-                new_model = v
-                logger.debug(f"📌 MODEL MAPPING: {original_model} (Azure deployment)")
-                
-            # Handle Azure Databricks Claude models
-            elif v.startswith('databricks-claude'):
-                # Already in correct format for Databricks
-                new_model = f"databricks/{v}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model} (Databricks Claude)")
-                v = new_model
-                
-            # Special case for direct Databricks model references in client code
-            elif 'databricks-claude' in v.lower():
-                # Already in correct format for Databricks
-                new_model = f"databricks/{v}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model} (Databricks Claude)")
-                v = new_model
-                
-            # Swap Haiku with small model (default: gpt-4o-mini)
-            elif 'haiku' in v.lower():
-                # Use OpenAI mapping for Haiku models
-                new_model = f"openai/{SMALL_MODEL}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-                v = new_model
-            
-            # Swap any Sonnet model with big model (default: gpt-4o)
-            elif 'sonnet' in v.lower():
-                # Use OpenAI mapping for Sonnet models
-                new_model = f"openai/{BIG_MODEL}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-                v = new_model
-            
-            # Keep the model as is but add openai prefix if not already present
-            elif not any(v.startswith(prefix) for prefix in ['openai/', 'azure/', 'databricks/']):
-                new_model = f"openai/{v}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-                v = new_model
+            # Map the model using our helper method
+            v = ModelHelper.map_model_for_openai(v)
                 
             # Store the original model in the values dictionary
             # This will be accessible as request.original_model
@@ -301,7 +383,6 @@ class MessagesRequest(BaseModel):
             return v
         else:
             # Original behavior - ensure anthropic/ prefix
-            original_model = v
             if not v.startswith('anthropic/'):
                 new_model = f"anthropic/{v}"
                 logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
@@ -314,63 +395,26 @@ class MessagesRequest(BaseModel):
                 return new_model
             return v
 
-class TokenCountRequest(BaseModel):
-    model: str
+class MessagesRequest(ModelRequestBase):
+    max_tokens: int
+    messages: List[Message]
+    system: Optional[Union[str, List[SystemContent]]] = None
+    stop_sequences: Optional[List[str]] = None
+    stream: Optional[bool] = False
+    temperature: Optional[float] = 1.0
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+    tools: Optional[List[Tool]] = None
+    tool_choice: Optional[Dict[str, Any]] = None
+    thinking: Optional[ThinkingConfig] = None
+
+class TokenCountRequest(ModelRequestBase):
     messages: List[Message]
     system: Optional[Union[str, List[SystemContent]]] = None
     tools: Optional[List[Tool]] = None
     thinking: Optional[ThinkingConfig] = None
     tool_choice: Optional[Dict[str, Any]] = None
-    original_model: Optional[str] = None  # Will store the original model name
-    
-    @field_validator('model')
-    def validate_model(cls, v, info):
-        # Store the original model name
-        original_model = v
-        
-        # Same validation as MessagesRequest
-        if USE_OPENAI_MODELS:
-            # Remove anthropic/ prefix if it exists
-            if v.startswith('anthropic/'):
-                v = v[10:]  
-            
-            # Swap Haiku with small model (default: gpt-4o-mini)
-            if 'haiku' in v.lower():
-                new_model = f"openai/{SMALL_MODEL}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-                v = new_model
-            
-            # Swap any Sonnet model with big model (default: gpt-4o)
-            elif 'sonnet' in v.lower():
-                new_model = f"openai/{BIG_MODEL}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-                v = new_model
-            
-            # Keep the model as is but add openai/ prefix if not already present
-            elif not v.startswith('openai/'):
-                new_model = f"openai/{v}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-                v = new_model
-            
-            # Store the original model in the values dictionary
-            values = info.data
-            if isinstance(values, dict):
-                values['original_model'] = original_model
-                
-            return v
-        else:
-            # Original behavior - ensure anthropic/ prefix
-            if not v.startswith('anthropic/'):
-                new_model = f"anthropic/{v}"
-                logger.debug(f"📌 MODEL MAPPING: {original_model} ➡️ {new_model}")
-                
-                # Store original model
-                values = info.data
-                if isinstance(values, dict):
-                    values['original_model'] = original_model
-                    
-                return new_model
-            return v
 
 class TokenCountResponse(BaseModel):
     input_tokens: int
@@ -407,49 +451,186 @@ async def log_requests(request: Request, call_next):
 
 # Not using validation function as we're using the environment API key
 
-def parse_tool_result_content(content):
-    """Helper function to properly parse and normalize tool result content."""
-    if content is None:
-        return "No content provided"
-        
-    if isinstance(content, str):
-        return content
-        
-    if isinstance(content, list):
-        result = ""
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                result += item.get("text", "") + "\n"
-            elif isinstance(item, str):
-                result += item + "\n"
-            elif isinstance(item, dict):
-                if "text" in item:
+class ContentParser:
+    """Helper class for content parsing and handling."""
+    
+    @staticmethod
+    def parse_tool_result_content(content):
+        """Helper function to properly parse and normalize tool result content."""
+        if content is None:
+            return "No content provided"
+            
+        if isinstance(content, str):
+            return content
+            
+        if isinstance(content, list):
+            result = ""
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
                     result += item.get("text", "") + "\n"
+                elif isinstance(item, str):
+                    result += item + "\n"
+                elif isinstance(item, dict):
+                    if "text" in item:
+                        result += item.get("text", "") + "\n"
+                    else:
+                        try:
+                            result += json.dumps(item) + "\n"
+                        except:
+                            result += str(item) + "\n"
                 else:
                     try:
-                        result += json.dumps(item) + "\n"
-                    except:
                         result += str(item) + "\n"
-            else:
-                try:
-                    result += str(item) + "\n"
-                except:
-                    result += "Unparseable content\n"
-        return result.strip()
-        
-    if isinstance(content, dict):
-        if content.get("type") == "text":
-            return content.get("text", "")
-        try:
-            return json.dumps(content)
-        except:
-            return str(content)
+                    except:
+                        result += "Unparseable content\n"
+            return result.strip()
             
-    # Fallback for any other type
-    try:
-        return str(content)
-    except:
-        return "Unparseable content"
+        if isinstance(content, dict):
+            if content.get("type") == "text":
+                return content.get("text", "")
+            try:
+                return json.dumps(content)
+            except:
+                return str(content)
+                
+        # Fallback for any other type
+        try:
+            return str(content)
+        except:
+            return "Unparseable content"
+    
+    @staticmethod
+    def extract_text_from_tool_result(block):
+        """Extract text content from a tool result block."""
+        tool_id = block.get("tool_use_id", "") if hasattr(block, "tool_use_id") else ""
+        if not hasattr(block, "content"):
+            return f"Tool result for {tool_id}: No content"
+            
+        # Handle different formats of content
+        result_content = block.content
+        
+        if isinstance(result_content, str):
+            return f"Tool result for {tool_id}:\n{result_content}"
+            
+        if isinstance(result_content, list):
+            text_result = ""
+            for item in result_content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text_result += item.get("text", "") + "\n"
+                elif isinstance(item, dict):
+                    # Handle any dict by trying to extract text or convert to JSON
+                    if "text" in item:
+                        text_result += item.get("text", "") + "\n"
+                    else:
+                        try:
+                            text_result += json.dumps(item) + "\n"
+                        except:
+                            text_result += str(item) + "\n"
+            return f"Tool result for {tool_id}:\n{text_result.strip()}"
+            
+        if isinstance(result_content, dict):
+            # Handle dictionary content
+            if result_content.get("type") == "text":
+                return f"Tool result for {tool_id}:\n{result_content.get('text', '')}"
+            try:
+                return f"Tool result for {tool_id}:\n{json.dumps(result_content)}"
+            except:
+                return f"Tool result for {tool_id}:\n{str(result_content)}"
+                
+        # Handle any other type by converting to string
+        try:
+            return f"Tool result for {tool_id}:\n{str(result_content)}"
+        except:
+            return f"Tool result for {tool_id}:\nUnparseable content"
+    
+    @staticmethod
+    def process_content_for_openai(messages):
+        """Process message content for OpenAI compatibility."""
+        processed_messages = []
+        
+        for msg in messages:
+            processed_msg = msg.copy()
+            
+            # Handle content field
+            if "content" in msg:
+                content = msg["content"]
+                
+                # Check if content is a list (content blocks)
+                if isinstance(content, list):
+                    # Convert complex content blocks to simple string
+                    text_content = ""
+                    for block in content:
+                        if isinstance(block, dict):
+                            # Handle different content block types
+                            if block.get("type") == "text":
+                                text_content += block.get("text", "") + "\n"
+                            
+                            # Handle tool_result content blocks
+                            elif block.get("type") == "tool_result":
+                                tool_id = block.get("tool_use_id", "unknown")
+                                text_content += f"[Tool Result ID: {tool_id}]\n"
+                                
+                                # Extract text from the tool_result content
+                                result_content = block.get("content", [])
+                                if isinstance(result_content, list):
+                                    for item in result_content:
+                                        if isinstance(item, dict) and item.get("type") == "text":
+                                            text_content += item.get("text", "") + "\n"
+                                        elif isinstance(item, dict):
+                                            # Handle any dict
+                                            if "text" in item:
+                                                text_content += item.get("text", "") + "\n"
+                                            else:
+                                                try:
+                                                    text_content += json.dumps(item) + "\n"
+                                                except:
+                                                    text_content += str(item) + "\n"
+                                elif isinstance(result_content, dict):
+                                    # Handle dictionary content
+                                    if result_content.get("type") == "text":
+                                        text_content += result_content.get("text", "") + "\n"
+                                    else:
+                                        try:
+                                            text_content += json.dumps(result_content) + "\n"
+                                        except:
+                                            text_content += str(result_content) + "\n"
+                                elif isinstance(result_content, str):
+                                    text_content += result_content + "\n"
+                                else:
+                                    try:
+                                        text_content += json.dumps(result_content) + "\n"
+                                    except:
+                                        text_content += str(result_content) + "\n"
+                            
+                            # Handle tool_use content blocks
+                            elif block.get("type") == "tool_use":
+                                tool_name = block.get("name", "unknown")
+                                tool_id = block.get("id", "unknown")
+                                tool_input = json.dumps(block.get("input", {}))
+                                text_content += f"[Tool: {tool_name} (ID: {tool_id})]\nInput: {tool_input}\n\n"
+                            
+                            # Handle image content blocks
+                            elif block.get("type") == "image":
+                                text_content += "[Image content - not displayed in text format]\n"
+                    
+                    # Make sure content is never empty for OpenAI models
+                    if not text_content.strip():
+                        text_content = "..."
+                    
+                    processed_msg["content"] = text_content.strip()
+                # Also check for None or empty string content
+                elif content is None:
+                    processed_msg["content"] = "..." # Empty content not allowed
+            
+            # Remove any fields OpenAI doesn't support in messages
+            for key in list(processed_msg.keys()):
+                if key not in ["role", "content", "name", "tool_call_id", "tool_calls"]:
+                    logger.warning(f"Removing unsupported field from message: {key}")
+                    del processed_msg[key]
+            
+            processed_messages.append(processed_msg)
+            
+        return processed_messages
 
 def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str, Any]:
     """Convert Anthropic API request format to LiteLLM format (which follows OpenAI)."""
@@ -495,48 +676,8 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
                         if block.type == "text":
                             text_content += block.text + "\n"
                         elif block.type == "tool_result":
-                            # Add tool result as a message by itself - simulate the normal flow
-                            tool_id = block.tool_use_id if hasattr(block, "tool_use_id") else ""
-                            
-                            # Handle different formats of tool result content
-                            result_content = ""
-                            if hasattr(block, "content"):
-                                if isinstance(block.content, str):
-                                    result_content = block.content
-                                elif isinstance(block.content, list):
-                                    # If content is a list of blocks, extract text from each
-                                    for content_block in block.content:
-                                        if hasattr(content_block, "type") and content_block.type == "text":
-                                            result_content += content_block.text + "\n"
-                                        elif isinstance(content_block, dict) and content_block.get("type") == "text":
-                                            result_content += content_block.get("text", "") + "\n"
-                                        elif isinstance(content_block, dict):
-                                            # Handle any dict by trying to extract text or convert to JSON
-                                            if "text" in content_block:
-                                                result_content += content_block.get("text", "") + "\n"
-                                            else:
-                                                try:
-                                                    result_content += json.dumps(content_block) + "\n"
-                                                except:
-                                                    result_content += str(content_block) + "\n"
-                                elif isinstance(block.content, dict):
-                                    # Handle dictionary content
-                                    if block.content.get("type") == "text":
-                                        result_content = block.content.get("text", "")
-                                    else:
-                                        try:
-                                            result_content = json.dumps(block.content)
-                                        except:
-                                            result_content = str(block.content)
-                                else:
-                                    # Handle any other type by converting to string
-                                    try:
-                                        result_content = str(block.content)
-                                    except:
-                                        result_content = "Unparseable content"
-                            
-                            # In OpenAI format, tool results come from the user (rather than being content blocks)
-                            text_content += f"Tool result for {tool_id}:\n{result_content}\n"
+                            # Use our helper method to extract text from tool result
+                            text_content += ContentParser.extract_text_from_tool_result(block) + "\n"
                 
                 # Add as a single user message with all the content
                 messages.append({"role": "user", "content": text_content.strip()})
@@ -591,7 +732,7 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
     
     # Create LiteLLM request dict
     litellm_request = {
-        "model": anthropic_request.model,  # t understands "anthropic/claude-x" format
+        "model": anthropic_request.model,  # it understands "anthropic/claude-x" format
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": anthropic_request.temperature,
@@ -662,11 +803,7 @@ def convert_litellm_to_anthropic(litellm_response: Union[Dict[str, Any], Any],
     # Enhanced response extraction with better error handling
     try:
         # Get the clean model name to check capabilities
-        clean_model = original_request.model
-        if clean_model.startswith("anthropic/"):
-            clean_model = clean_model[len("anthropic/"):]
-        elif clean_model.startswith("openai/"):
-            clean_model = clean_model[len("openai/"):]
+        clean_model = ModelHelper.get_clean_model_name(original_request.model)
         
         # Check if this is a Claude model (which supports content blocks)
         is_claude_model = clean_model.startswith("claude-")
@@ -1118,203 +1255,33 @@ async def create_message(
     raw_request: Request
 ):
     try:
-        # print the body here
+        # Get request body for logging
         body = await raw_request.body()
     
         # Parse the raw body as JSON since it's bytes
         body_json = json.loads(body.decode('utf-8'))
         original_model = body_json.get("model", "unknown")
         
-        # Get the display name for logging, just the model name without provider prefix
-        display_model = original_model
-        if "/" in display_model:
-            display_model = display_model.split("/")[-1]
+        # Get the display name for logging using our helper
+        display_model = ModelHelper.get_display_model_name(original_model)
         
-        # Clean model name for capability check
-        clean_model = request.model
-        if clean_model.startswith("anthropic/"):
-            clean_model = clean_model[len("anthropic/"):]
-        elif clean_model.startswith("openai/"):
-            clean_model = clean_model[len("openai/"):]
+        # Get clean model name for capability check
+        clean_model = ModelHelper.get_clean_model_name(request.model)
         
         logger.debug(f"📊 PROCESSING REQUEST: Model={request.model}, Stream={request.stream}")
         
         # Convert Anthropic request to LiteLLM format
         litellm_request = convert_anthropic_to_litellm(request)
         
-        # Determine which API key to use based on the model and add provider-specific parameters
-        if request.model.startswith("openai/"):
-            if not has_openai:
-                raise HTTPException(status_code=400, detail="OpenAI API key required but not configured")
-            litellm_request["api_key"] = OPENAI_API_KEY
-            logger.debug(f"Using OpenAI API key for model: {request.model}")
-        elif request.model.startswith("anthropic/"):
-            if not ANTHROPIC_API_KEY:
-                raise HTTPException(status_code=400, detail="Anthropic API key required but not configured")
-            litellm_request["api_key"] = ANTHROPIC_API_KEY
-            logger.debug(f"Using Anthropic API key for model: {request.model}")
-        elif request.model.startswith("azure/"):
-            if not has_azure:
-                raise HTTPException(status_code=400, detail="Azure OpenAI configuration required but not configured")
-            litellm_request["api_key"] = AZURE_OPENAI_API_KEY
-            litellm_request["api_base"] = AZURE_OPENAI_ENDPOINT
-            litellm_request["api_version"] = AZURE_OPENAI_API_VERSION
-            # Extract the deployment name from azure/deployment_name
-            deployment_name = request.model[6:]
-            litellm_request["model"] = f"azure/{deployment_name}"
-            logger.debug(f"Using Azure OpenAI configuration for deployment: {deployment_name}")
-        elif request.model.startswith("databricks/"):
-            if not has_databricks:
-                raise HTTPException(status_code=400, detail="Databricks configuration required but not configured")
-            # Extract the Databricks model name
-            databricks_model = request.model[11:]
-            # Set up Databricks-specific configuration
-            litellm_request["api_key"] = DATABRICKS_TOKEN
-            litellm_request["api_base"] = f"{DATABRICKS_HOST}/serving-endpoints/{databricks_model}"
-            litellm_request["model"] = "databricks"
-            logger.debug(f"Using Databricks configuration for model: {databricks_model}")
-        else:
-            # Unknown model prefix, require explicit provider specification
-            raise HTTPException(status_code=400, 
-                detail="Unrecognized model prefix. Please specify model with explicit provider prefix: 'openai/', 'anthropic/', 'azure/', or 'databricks/'.")
+        # Configure provider-specific parameters using our helper
+        litellm_request = ModelHelper.configure_provider_parameters(request.model, litellm_request)
         
         # For OpenAI models - modify request format to work with limitations
         if "openai" in litellm_request["model"] and "messages" in litellm_request:
             logger.debug(f"Processing OpenAI model request: {litellm_request['model']}")
             
-            # For OpenAI models, we need to convert content blocks to simple strings
-            # and handle other requirements
-            for i, msg in enumerate(litellm_request["messages"]):
-                # Special case - handle message content directly when it's a list of tool_result
-                # This is a specific case we're seeing in the error
-                if "content" in msg and isinstance(msg["content"], list):
-                    is_only_tool_result = True
-                    for block in msg["content"]:
-                        if not isinstance(block, dict) or block.get("type") != "tool_result":
-                            is_only_tool_result = False
-                            break
-                    
-                    if is_only_tool_result and len(msg["content"]) > 0:
-                        logger.warning(f"Found message with only tool_result content - special handling required")
-                        # Extract the content from all tool_result blocks
-                        all_text = ""
-                        for block in msg["content"]:
-                            all_text += "Tool Result:\n"
-                            result_content = block.get("content", [])
-                            
-                            # Handle different formats of content
-                            if isinstance(result_content, list):
-                                for item in result_content:
-                                    if isinstance(item, dict) and item.get("type") == "text":
-                                        all_text += item.get("text", "") + "\n"
-                                    elif isinstance(item, dict):
-                                        # Fall back to string representation of any dict
-                                        try:
-                                            item_text = item.get("text", json.dumps(item))
-                                            all_text += item_text + "\n"
-                                        except:
-                                            all_text += str(item) + "\n"
-                            elif isinstance(result_content, str):
-                                all_text += result_content + "\n"
-                            else:
-                                try:
-                                    all_text += json.dumps(result_content) + "\n"
-                                except:
-                                    all_text += str(result_content) + "\n"
-                        
-                        # Replace the list with extracted text
-                        litellm_request["messages"][i]["content"] = all_text.strip() or "..."
-                        logger.warning(f"Converted tool_result to plain text: {all_text.strip()[:200]}...")
-                        continue  # Skip normal processing for this message
-                
-                # 1. Handle content field - normal case
-                if "content" in msg:
-                    # Check if content is a list (content blocks)
-                    if isinstance(msg["content"], list):
-                        # Convert complex content blocks to simple string
-                        text_content = ""
-                        for block in msg["content"]:
-                            if isinstance(block, dict):
-                                # Handle different content block types
-                                if block.get("type") == "text":
-                                    text_content += block.get("text", "") + "\n"
-                                
-                                # Handle tool_result content blocks - extract nested text
-                                elif block.get("type") == "tool_result":
-                                    tool_id = block.get("tool_use_id", "unknown")
-                                    text_content += f"[Tool Result ID: {tool_id}]\n"
-                                    
-                                    # Extract text from the tool_result content
-                                    result_content = block.get("content", [])
-                                    if isinstance(result_content, list):
-                                        for item in result_content:
-                                            if isinstance(item, dict) and item.get("type") == "text":
-                                                text_content += item.get("text", "") + "\n"
-                                            elif isinstance(item, dict):
-                                                # Handle any dict by trying to extract text or convert to JSON
-                                                if "text" in item:
-                                                    text_content += item.get("text", "") + "\n"
-                                                else:
-                                                    try:
-                                                        text_content += json.dumps(item) + "\n"
-                                                    except:
-                                                        text_content += str(item) + "\n"
-                                    elif isinstance(result_content, dict):
-                                        # Handle dictionary content
-                                        if result_content.get("type") == "text":
-                                            text_content += result_content.get("text", "") + "\n"
-                                        else:
-                                            try:
-                                                text_content += json.dumps(result_content) + "\n"
-                                            except:
-                                                text_content += str(result_content) + "\n"
-                                    elif isinstance(result_content, str):
-                                        text_content += result_content + "\n"
-                                    else:
-                                        try:
-                                            text_content += json.dumps(result_content) + "\n"
-                                        except:
-                                            text_content += str(result_content) + "\n"
-                                
-                                # Handle tool_use content blocks
-                                elif block.get("type") == "tool_use":
-                                    tool_name = block.get("name", "unknown")
-                                    tool_id = block.get("id", "unknown")
-                                    tool_input = json.dumps(block.get("input", {}))
-                                    text_content += f"[Tool: {tool_name} (ID: {tool_id})]\nInput: {tool_input}\n\n"
-                                
-                                # Handle image content blocks
-                                elif block.get("type") == "image":
-                                    text_content += "[Image content - not displayed in text format]\n"
-                        
-                        # Make sure content is never empty for OpenAI models
-                        if not text_content.strip():
-                            text_content = "..."
-                        
-                        litellm_request["messages"][i]["content"] = text_content.strip()
-                    # Also check for None or empty string content
-                    elif msg["content"] is None:
-                        litellm_request["messages"][i]["content"] = "..." # Empty content not allowed
-                
-                # 2. Remove any fields OpenAI doesn't support in messages
-                for key in list(msg.keys()):
-                    if key not in ["role", "content", "name", "tool_call_id", "tool_calls"]:
-                        logger.warning(f"Removing unsupported field from message: {key}")
-                        del msg[key]
-            
-            # 3. Final validation - check for any remaining invalid values and dump full message details
-            for i, msg in enumerate(litellm_request["messages"]):
-                # Log the message format for debugging
-                logger.debug(f"Message {i} format check - role: {msg.get('role')}, content type: {type(msg.get('content'))}")
-                
-                # If content is still a list or None, replace with placeholder
-                if isinstance(msg.get("content"), list):
-                    logger.warning(f"CRITICAL: Message {i} still has list content after processing: {json.dumps(msg.get('content'))}")
-                    # Last resort - stringify the entire content as JSON
-                    litellm_request["messages"][i]["content"] = f"Content as JSON: {json.dumps(msg.get('content'))}"
-                elif msg.get("content") is None:
-                    logger.warning(f"Message {i} has None content - replacing with placeholder")
-                    litellm_request["messages"][i]["content"] = "..." # Fallback placeholder
+            # Use our helper method to process the messages for OpenAI compatibility
+            litellm_request["messages"] = ContentParser.process_content_for_openai(litellm_request["messages"])
         
         # Only log basic info about the request, not the full details
         logger.debug(f"Request for model: {litellm_request.get('model')}, stream: {litellm_request.get('stream', False)}")
@@ -1404,20 +1371,11 @@ async def count_tokens(
     raw_request: Request
 ):
     try:
-        # Log the incoming token count request
+        # Get the original model name
         original_model = request.original_model or request.model
         
-        # Get the display name for logging, just the model name without provider prefix
-        display_model = original_model
-        if "/" in display_model:
-            display_model = display_model.split("/")[-1]
-        
-        # Clean model name for capability check
-        clean_model = request.model
-        if clean_model.startswith("anthropic/"):
-            clean_model = clean_model[len("anthropic/"):]
-        elif clean_model.startswith("openai/"):
-            clean_model = clean_model[len("openai/"):]
+        # Get the display name for logging using our helper
+        display_model = ModelHelper.get_display_model_name(original_model)
         
         # Convert the messages to a format LiteLLM can understand
         converted_request = convert_anthropic_to_litellm(
@@ -1432,30 +1390,8 @@ async def count_tokens(
             )
         )
         
-        # Add provider-specific parameters based on model - NO FALLBACKS
-        if request.model.startswith("azure/"):
-            if not has_azure:
-                raise HTTPException(status_code=400, detail="Azure OpenAI configuration required but not configured")
-            converted_request["api_key"] = AZURE_OPENAI_API_KEY
-            converted_request["api_base"] = AZURE_OPENAI_ENDPOINT
-            converted_request["api_version"] = AZURE_OPENAI_API_VERSION
-        elif request.model.startswith("databricks/"):
-            if not has_databricks:
-                raise HTTPException(status_code=400, detail="Databricks configuration required but not configured")
-            databricks_model = request.model[11:]
-            converted_request["api_key"] = DATABRICKS_TOKEN
-            converted_request["api_base"] = f"{DATABRICKS_HOST}/serving-endpoints/{databricks_model}"
-            converted_request["model"] = "databricks"
-        elif request.model.startswith("openai/"):
-            if not has_openai:
-                raise HTTPException(status_code=400, detail="OpenAI API key required but not configured")
-        elif request.model.startswith("anthropic/"):
-            if not ANTHROPIC_API_KEY:
-                raise HTTPException(status_code=400, detail="Anthropic API key required but not configured")
-        else:
-            # Unknown model prefix, require explicit provider specification
-            raise HTTPException(status_code=400, 
-                detail="Unrecognized model prefix. Please specify model with explicit provider prefix: 'openai/', 'anthropic/', 'azure/', or 'databricks/'.")
+        # Configure provider-specific parameters using our helper
+        converted_request = ModelHelper.configure_provider_parameters(request.model, converted_request)
         
         # Use LiteLLM's token_counter function
         try:
