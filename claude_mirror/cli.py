@@ -381,7 +381,6 @@ def wait_for_server(port, timeout=20):
 
 def start_proxy_server(debug_mode, config_path=None):
     """Start the proxy server as a subprocess."""
-    server_script = Path(__file__).parent / "server.py"
     
     if debug_mode:
         print("Starting proxy server in debug mode...")
@@ -399,7 +398,8 @@ def start_proxy_server(debug_mode, config_path=None):
     log_level = "debug" if debug_mode else "error"
     
     # Base command
-    cmd = ["uvicorn", str(server_script).replace(".py", ":app"), 
+    # Use the module path instead of file path
+    cmd = ["uvicorn", "claude_mirror.server:app", 
            "--host", "0.0.0.0", "--port", "8082", "--log-level", log_level]
     
     # Add config path if provided
