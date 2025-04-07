@@ -467,7 +467,7 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
         if reasoning_effort in ["low", "medium", "high", None]:
             # Add reasoning_effort parameter to all models if it's not None
             if reasoning_effort:
-                litellm_request["response_format"] = {"reasoning_effort": reasoning_effort}
+                litellm_request["reasoning_effort"] = reasoning_effort
     
     # Convert tools to OpenAI format
     if anthropic_request.tools:
