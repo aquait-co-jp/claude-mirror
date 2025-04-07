@@ -212,10 +212,20 @@ def configure_model_category(config, category):
         print("Model/deployment name cannot be empty.")
         model = input("Model/deployment name: ")
     
+    # Default configuration
     config["model_categories"][category] = {
         "provider": provider,
         "deployment": model
     }
+    
+    # Add reasoning_effort configuration (optional)
+    print("\nOptional: Configure reasoning effort for this model")
+    print("This directly configures the reasoning_effort parameter for all models")
+    print("Options: low, medium, high, or leave blank for default behavior")
+    reasoning_effort = input("Reasoning effort (low/medium/high or leave blank): ").strip().lower()
+    
+    if reasoning_effort in ["low", "medium", "high"]:
+        config["model_categories"][category]["reasoning_effort"] = reasoning_effort
     
     print(f"{category.title()} model configuration updated.")
     return config

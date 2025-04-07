@@ -453,6 +453,21 @@ def convert_anthropic_to_litellm(anthropic_request: MessagesRequest) -> Dict[str
     
     if anthropic_request.top_k:
         litellm_request["top_k"] = anthropic_request.top_k
+        
+    # Check for reasoning_effort in model configuration
+    category = None
+    for cat, cat_config in config.get("model_categories", {}).items():
+        cat_model = f"{cat_config.get('provider')}/{cat_config.get('deployment')}"
+        if cat_model == anthropic_request.model:
+            category = cat
+            break
+            
+    if category and "reasoning_effort" in config["model_categories"][category]:
+        reasoning_effort = config["model_categories"][category]["reasoning_effort"]
+        if reasoning_effort in ["low", "medium", "high", None]:
+            # Add reasoning_effort parameter to all models if it's not None
+            if reasoning_effort:
+                litellm_request["response_format"] = {"reasoning_effort": reasoning_effort}
     
     # Convert tools to OpenAI format
     if anthropic_request.tools:

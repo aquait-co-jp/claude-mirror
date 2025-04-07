@@ -21,25 +21,31 @@ model_categories:
   large:
     provider: openai
     deployment: gpt-4o
+    reasoning_effort: high  # Accepts: low, medium, high, or null/omitted
   
   small:
     provider: openai
     deployment: gpt-4o-mini
+    reasoning_effort: low  # Accepts: low, medium, high, or null/omitted
   
   # Example Azure mapping
   # large:
   #   provider: azure
   #   deployment: gpt4-deployment
+  #   reasoning_effort: high  # Accepts: low, medium, high, or null/omitted
   # 
   # small:
   #   provider: azure
   #   deployment: gpt35-deployment
+  #   reasoning_effort: low  # Accepts: low, medium, high, or null/omitted
   
   # Example Databricks mapping
   # large:
   #   provider: databricks
   #   deployment: databricks-claude-3-sonnet
+  #   reasoning_effort: high  # Accepts: low, medium, high, or null/omitted
   # 
   # small:
   #   provider: databricks
   #   deployment: databricks-claude-3-haiku
+  #   reasoning_effort: low  # Accepts: low, medium, high, or null/omitted
